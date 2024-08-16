@@ -1,0 +1,69 @@
+html,body {
+    font-family: monospace;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#reserved {
+    display: none;
+}
+
+input[type="radio"] {
+    display: none;
+}
+
+.radiolabel {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+}
+
+.radiolabel img {
+    height: 500px;
+}
+
+#cards {
+    display: flex;
+    flex-wrap: wrap;
+    flex: 1;
+    margin-left: 150px;
+}
+
+.cardwrap {
+    margin-left: 15px;
+    margin-bottom: 30px;
+}
+
+#form {
+    padding: 20px;
+    display: flex;
+}
+
+#sidebar {
+    width: 150px;
+    position: fixed;
+    margin-top: 20px;
+}
+
+#submit {
+    margin-top: 15px;
+    width: 100%;
+    height: 50px;
+}
+
+input[type="radio"]:checked+label img {
+    outline: 5px solid #F3BC37;
+}
+
+.finish {
+    margin-top: 10px;
+}
+
+body {
+    background: #CCC;
+}
+
+.radiolabel img {
+    border-radius: 16px;
+}
