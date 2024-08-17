@@ -69,6 +69,11 @@ input[type="radio"]:checked+label img {
     outline: 5px solid #F3BC37;
 }
 
+#lower-sidebar {
+  position: fixed;
+  bottom: 15px;
+}
+
 .finish {
     display: inline-block;
     margin-top: 10px;

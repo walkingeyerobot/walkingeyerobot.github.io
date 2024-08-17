@@ -1,6 +1,8 @@
 (function() {
   cardDiv = document.querySelector('#cards');
   cardDiv.addEventListener('contextmenu', onRightClick, false);
+  currentCount = document.querySelector('#current');
+  totalCount = document.querySelector('#total');
   submitButton = document.querySelector('#submit');
   prioritySlider = document.querySelector('#priority');
   extraRowsSlider = document.querySelector('#extrarows');
@@ -33,7 +35,7 @@
     'playerrewards',
     'portrait',
     'poster',
-    'prerelease', 
+    'prerelease',
     'promopack',
     'ravnicacity',
     'release',
@@ -65,6 +67,7 @@
   ];
   fetch('all.txt').then(res => res.text()).then(data => {
     allCardNames = data.split('\n');
+    totalCount.innerText = allCardNames.length;
     nextCard();
   });
   function queryCard(cardName, cb) {
@@ -217,6 +220,7 @@
     prioritySlider.value = 3;
     extraRowsSlider.value = 0;
     submitButton.disabled = false;
+    currentCount.innerText = currentCardIndex + 1;
   }
   function onRightClick(e) {
     var target = e.target;
