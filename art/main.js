@@ -233,4 +233,10 @@
     e.preventDefault();
     target.parentElement.removeChild(target);
   }
+  function undo() {
+    currentCardIndex--;
+    delete localStorage[allCardNames[currentCardIndex]];
+    queryCard(allCardNames[currentCardIndex], queryCardCallback);
+  }
+  window.undo = undo;
 }());
