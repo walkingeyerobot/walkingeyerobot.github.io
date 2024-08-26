@@ -33,6 +33,7 @@
     'magnified',
     'mediainsert',
     'playerrewards',
+    'playtest',
     'portrait',
     'poster',
     'prerelease',
