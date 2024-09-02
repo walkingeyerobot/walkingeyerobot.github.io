@@ -24,6 +24,7 @@
     'dossier',
     'draculaseries',
     'draftweekend',
+    'duels',
     'fnm',
     'gameday',
     'giftbox',
