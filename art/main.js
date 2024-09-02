@@ -21,6 +21,7 @@
     'concept',
     'convention',
     'datestamped',
+    'dossier',
     'draculaseries',
     'draftweekend',
     'fnm',
