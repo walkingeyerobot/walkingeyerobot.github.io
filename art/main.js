@@ -60,6 +60,7 @@
     'halofoil',
     'oilslick',
     'rainbowfoil',
+    'raisedfoil',
     'ripplefoil',
     'silverfoil',
     'stepandcompleat',
