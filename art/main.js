@@ -63,6 +63,7 @@
     'galaxyfoil',
     'glossy',
     'halofoil',
+    'neonink',
     'oilslick',
     'rainbowfoil',
     'raisedfoil',
