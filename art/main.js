@@ -35,6 +35,7 @@
     'judgegift',
     'magnified',
     'mediainsert',
+    'openhouse',
     'playerrewards',
     'playtest',
     'portrait',
