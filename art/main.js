@@ -18,6 +18,7 @@
     'bundle',
     'buyabox',
     'commanderparty',
+    'concept',
     'convention',
     'datestamped',
     'draculaseries',
