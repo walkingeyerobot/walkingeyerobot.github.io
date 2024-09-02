@@ -46,6 +46,7 @@
     'release',
     'scroll',
     'serialized',
+    'setextension',
     'setpromo',
     'stamped',
     'starterdeck',
