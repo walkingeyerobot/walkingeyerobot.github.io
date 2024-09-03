@@ -62,6 +62,7 @@
     'doublerainbow',
     'embossed',
     'galaxyfoil',
+    'gilded',
     'glossy',
     'halofoil',
     'neonink',
