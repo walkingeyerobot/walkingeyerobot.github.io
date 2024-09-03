@@ -31,6 +31,7 @@
     'godzillaseries',
     'imagine',
     'instore',
+    'intropack',
     'jpwalker',
     'judgegift',
     'magnified',
