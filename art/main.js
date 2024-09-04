@@ -38,6 +38,7 @@
     'mediainsert',
     'openhouse',
     'playerrewards',
+    'playpromo',
     'playtest',
     'portrait',
     'poster',
