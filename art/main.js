@@ -161,9 +161,9 @@
     cards = JSON.parse(data).data;
     console.log(JSON.parse(data));
     if (cards[0].reserved) {
-      reservedDiv.style.display = 'block';
+      reservedDiv.style.visibility = 'visible';
     } else {
-      reservedDiv.style.display = 'none';
+      reservedDiv.style.visibility = 'hidden';
     }
     var choices = [];
     for (var i = 0; i < cards.length; i++) {

@@ -6,7 +6,7 @@ html,body {
 }
 
 #reserved {
-    display: none;
+    visibility: hidden;
     text-align: center;
     margin: 10px;
     padding: 10px;
