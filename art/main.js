@@ -4,11 +4,17 @@
   currentCount = document.querySelector('#current');
   totalCount = document.querySelector('#total');
   submitButton = document.querySelector('#submit');
+  revealButton = document.querySelector('#reveal');
+  revealButton.addEventListener('click', onReveal, false);
   prioritySlider = document.querySelector('#priority');
   extraRowsSlider = document.querySelector('#extrarows');
   reservedDiv = document.querySelector('#reserved');
   formElement = document.querySelector('#form');
   formElement.addEventListener('submit', onSubmit, false);
+  var reviewMode = new URLSearchParams(document.location.search).has('review');
+  if (reviewMode) {
+    revealButton.style.display = 'block';
+  }
   var allCardNames = [];
   var currentCardIndex = 0;
   var ignoredPromoTypes = [
@@ -136,6 +142,9 @@
   function nextCard() {
     while (currentCardIndex < allCardNames.length && localStorage.getItem(allCardNames[currentCardIndex])) {
       currentCardIndex++;
+      if (reviewMode) {
+        break;
+      }
     }
     queryCard(allCardNames[currentCardIndex], queryCardCallback);
   }
@@ -218,9 +227,21 @@
       return;
     }
     var h = '';
+    var prevChoice = JSON.parse(localStorage.getItem(allCardNames[currentCardIndex]));
     for (var i = 0; i < choices.length; i++) {
-      h += `<div class="cardwrap">
-  <input type="radio" name="cardz" id="card${i}" value="${encodeURI(JSON.stringify(choices[i]))}" />
+      var cardWrapClass = 'cardwrap';
+      var checked = '';
+      var choice = choices[i];
+      if (reviewMode) {
+        if (choice.set === prevChoice.set && choice.collector_number === prevChoice.collector_number) {
+          cardWrapClass += ' found';
+          checked = 'checked';
+        } else {
+          cardWrapClass += ' notfound';
+        }
+      }
+      h += `<div class="${cardWrapClass}">
+  <input type="radio" name="cardz" id="card${i}" value="${encodeURI(JSON.stringify(choices[i]))}" ${checked} />
   <label for="card${i}" class="radiolabel">`
       for (var j = 0; j < choices[i].image_uris.length; j++) {
         h += `<img src="${choices[i].image_uris[j]}" />`
@@ -246,8 +267,15 @@
   }
   function undo() {
     currentCardIndex--;
-    delete localStorage[allCardNames[currentCardIndex]];
+    if (!reviewMode) {
+      delete localStorage[allCardNames[currentCardIndex]];
+    }
     queryCard(allCardNames[currentCardIndex], queryCardCallback);
   }
   window.undo = undo;
+  function onReveal(e) {
+    [].forEach.call(document.querySelectorAll('.cardwrap.notfound'), (v, i, a) => {
+      v.style.display = 'block';
+    });
+  }
 }());
