@@ -233,7 +233,7 @@
       var checked = '';
       var choice = choices[i];
       if (reviewMode) {
-        if (choice.set === prevChoice.set && choice.collector_number === prevChoice.collector_number) {
+        if (choice.set === prevChoice.set && choice.collector_number === prevChoice.collector_number && choice.finish === prevChoice.finish) {
           cardWrapClass += ' found';
           checked = 'checked';
         } else {
