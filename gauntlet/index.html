@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gauntlet IV password encoder</title>
+  <link href="https://cdn.jsdelivr.net/npm/beercss@3.7.12/dist/cdn/beer.min.css" rel="stylesheet">
+  <script type="module"
+          src="https://cdn.jsdelivr.net/npm/beercss@3.7.12/dist/cdn/beer.min.js"></script>
+  <script type="module"
+          src="https://cdn.jsdelivr.net/npm/material-dynamic-colors@1.1.2/dist/cdn/material-dynamic-colors.min.js"></script>
+  <script type="application/javascript" src="wasm_exec.js"></script>
+</head>
+<body>
+<main class="responsive">
+  <fieldset>
+    <legend>Player data</legend>
+    <div class="field border label">
+      <input autofocus>
+      <label>Name</label>
+    </div>
+    <div class="field border label">
+      <input type="number" value="2000">
+      <label>Health</label>
+    </div>
+    <div class="field">
+      <nav class="middle">
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Extra magic</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Extra shot power</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Extra shot speed</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Extra fight power</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Extra defense</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Extra speed</span>
+        </label>
+      </nav>
+    </div>
+    <div class="field">
+      <nav class="middle">
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Earth tower</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Water tower</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Fire tower</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Wind tower</span>
+        </label>
+      </nav>
+    </div>
+    <div class="field border label">
+      <input type="number" value="0">
+      <label>Gold</label>
+    </div>
+    <div class="field border label">
+      <input type="number" value="0">
+      <label>Experience</label>
+    </div>
+    <div class="field grid">
+      <div class="field border label s2">
+        <input type="number" value="0">
+        <label>Magic levels</label>
+      </div>
+      <div class="field border label s2">
+        <input type="number" value="0">
+        <label>Shot power levels</label>
+      </div>
+      <div class="field border label s2">
+        <input type="number" value="0">
+        <label>Shot speed levels</label>
+      </div>
+      <div class="field border label s2">
+        <input type="number" value="0">
+        <label>Fight power levels</label>
+      </div>
+      <div class="field border label s2">
+        <input type="number" value="0">
+        <label>Defense levels</label>
+      </div>
+      <div class="field border label s2">
+        <input type="number" value="0">
+        <label>Speed levels</label>
+      </div>
+    </div>
+    <div class="field grid">
+      <div class="field border label s3">
+        <input type="number" value="0">
+        <label>Equipped weapon</label>
+      </div>
+      <div class="field border label s3">
+        <input type="number" value="0">
+        <label>Equipped armor</label>
+      </div>
+      <div class="field border label s3">
+        <input type="number" value="0">
+        <label>Equipped accessory</label>
+      </div>
+      <div class="s1"></div>
+      <label class="checkbox s1">
+        <input type="checkbox">
+        <span>Defend orb</span>
+      </label>
+    </div>
+    <div class="field">
+      <nav class="middle">
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Heal drink</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Warp wing</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Float ring</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Fight ring</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Heal ring</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox">
+          <span>Mirror ring</span>
+        </label>
+      </nav>
+    </div>
+    <div class="field border label">
+      <input type="number" value="0">
+      <label>???</label>
+    </div>
+    <div class="field grid">
+      <div class="field border label s4">
+        <input type="number" value="0">
+        <label>Time played</label>
+      </div>
+      <div class="field border label s4">
+        <input type="number" value="0">
+        <label>Monsters killed</label>
+      </div>
+    </div>
+    <div class="field border label">
+      <input type="number" value="0">
+      <label>???</label>
+    </div>
+    <div class="field border label">
+      <input type="number" value="1">
+      <label>???</label>
+    </div>
+    <div class="field border label">
+      <select>
+        <option value="0">Warrior</option>
+        <option value="1">Valkyrie</option>
+        <option value="2">Wizard</option>
+        <option value="3">Elf</option>
+      </select>
+      <label>Player type</label>
+    </div>
+    <div class="field border label">
+      <input type="number" value="0">
+      <label>???</label>
+    </div>
+    <div class="field grid">
+      <div class="field border label s4">
+        <input type="number" value="0">
+        <label>Keys</label>
+      </div>
+      <div class="field border label s4">
+        <input type="number" value="0">
+        <label>Potions</label>
+      </div>
+    </div>
+    </div>
+    <button>Encode</button>
+  </fieldset>
+  <article>
+    <h1 class="center-align" id="output" style="font-family: monospace"></h1>
+  </article>
+</main>
+<script type="application/javascript" src="index.js"></script>
+</body>
+</html>
