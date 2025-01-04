@@ -1,5 +1,5 @@
 const go = new Go();
-WebAssembly.instantiateStreaming(fetch('../build/gauntletpwd.wasm'), go.importObject)
+WebAssembly.instantiateStreaming(fetch('gauntletpwd.wasm'), go.importObject)
     .then(obj => {
         go.run(obj.instance);
     });

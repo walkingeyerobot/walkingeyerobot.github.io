@@ -1,0 +1,13 @@
+{
+  "name": "Gauntlet IV Password Generator",
+  "icons": [
+    {
+      "src": "img.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone"
+}
