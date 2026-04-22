@@ -58,6 +58,7 @@
     'imagine',
     'instore',
     'intropack',
+    'japanshowcase',
     'jpwalker',
     'judgegift',
     'magnified',
