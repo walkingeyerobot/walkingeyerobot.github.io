@@ -81,6 +81,7 @@
     'sldbonus',
     'sourcematerial',
     'stamped',
+    'standardshowdown',
     'startercollection',
     'starterdeck',
     'storechampionship',
