@@ -100,6 +100,7 @@
     'gilded',
     'glossy',
     'halofoil',
+    'invisibleink',
     'manafoil',
     'neonink',
     'oilslick',
