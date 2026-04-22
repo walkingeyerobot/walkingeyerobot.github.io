@@ -121,7 +121,7 @@
     nextCard();
   });
   function queryCard(cardName, cb) {
-    var c = cardName.replaceAll('"', '').replaceAll(' ', '+');
+    var c = cardName.replaceAll('"', '').replaceAll(' ', '+').replaceAll('&', '%26');
     url = 'https://api.scryfall.com/cards/search?q=%2B%2B%21"' + c + '"+game%3Apaper+-a%3A"terese+nielsen"+-a%3A"noah+bradley"+-a%3A"seb+mckinnon"-e%3A30a+-e%3Acei+-e%3Aced+-e%3Aovnt+include%3Aextras+-e%3Awc00+-e%3Awc03+-e%3Aptc+-e%3Aplist+-e%3Awc97+-e%3Awc98+-e%3A4bb+-e%3Afbb+-e%3Awc02+-e%3Awc01+-e%3Awc04+-e%3Awc99+-e%3Awc02+-t%3Atoken'
     fetch(url)
       .then(res => {
