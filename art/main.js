@@ -54,6 +54,7 @@
     'gameday',
     'giftbox',
     'godzillaseries',
+    'headliner',
     'imagine',
     'instore',
     'intropack',
