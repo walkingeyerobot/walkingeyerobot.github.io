@@ -93,6 +93,7 @@
     'wizardsplaynetwork',
   ];
   var promoFinishes = [
+    'chocobotrackfoil',
     'confettifoil',
     'doublerainbow',
     'dragonscalefoil',
