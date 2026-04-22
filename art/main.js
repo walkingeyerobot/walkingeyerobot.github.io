@@ -18,6 +18,7 @@
   var allCardNames = [];
   var currentCardIndex = 0;
   var ignoredPromoTypes = [
+    'alchemy',
     'arenaleague',
     'beginnerbox',
     'boosterfun',
