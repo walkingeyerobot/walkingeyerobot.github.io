@@ -1,0 +1,20 @@
+html,body {
+    font-family: monospace;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#p,#n {
+    color: #00000080;
+    font-size: 16vh;
+    height: 25%;
+}
+#c {
+    font-size: 33vh;
+    height: 50%;
+}
+
+div {
+    text-align: center;
+}
