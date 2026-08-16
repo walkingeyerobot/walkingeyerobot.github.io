@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Capsuleer Assets</title>
+  <link rel="stylesheet" href="index.css"></link>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand"><div class="mark">◈</div><span>Capsuleer Assets</span></div>
+      <div class="status" id="status">Disconnected</div>
+    </header>
+    <main>
+      <section class="intro">
+        <div class="eyebrow">EVE Online · Secure access</div>
+        <h1>Your hangars.<br>One view.</h1>
+        <p class="lede">Connect through EVE Online's official login and explore every asset owned by the selected character.</p>
+        <div class="privacy"><span>PKCE protected</span><span>No client secret</span><span>No backend</span></div>
+      </section>
+
+      <section class="card setup" id="setup">
+        <h2>Connect your character</h2>
+        <p class="hint">Authorize this application through EVE Online's official login.</p>
+        <div class="callback"><strong>Registered callback URL</strong><span id="redirectUri"></span></div>
+        <button id="login" type="button">Log in with EVE Online</button>
+        <div class="error" id="error" role="alert"></div>
+        <p class="fineprint">The application must allow <code>esi-assets.read_assets.v1</code> and <code>esi-universe.read_structures.v1</code>, and use the exact callback URL shown above.</p>
+      </section>
+
+      <section class="card dashboard" id="dashboard">
+        <div class="identity">
+          <img class="portrait" id="portrait" alt="Character portrait">
+          <div><h2 id="characterName">Capsuleer</h2><p id="characterId"></p></div>
+        </div>
+        <div class="asset-summary">
+          <div><div class="balance-label">Inventory</div><div class="asset-count" id="assetCount">—</div></div>
+          <div class="currency" id="locationCount"></div>
+        </div>
+        <div class="tree-toolbar"><input id="assetSearch" type="search" placeholder="Filter assets…"><button id="toggleTree" type="button">Collapse all</button></div>
+        <div class="tree" id="assetTree" aria-label="Character assets"></div>
+        <section class="fit-compare">
+          <div class="fit-heading"><div><div class="balance-label">Fit comparison</div><h3>Compare an EFT fit</h3></div></div>
+          <label for="eftInput">EFT fitting</label>
+          <textarea id="eftInput" rows="8" spellcheck="false" placeholder="[Heron Navy Issue, Deepflow Rift Dredger]&#10;Inertial Stabilizers II&#10;&#10;Scan Rangefinding Array II&#10;&#10;Core Probe Launcher II, Sisters Core Scanner Probe"></textarea>
+          <div class="fit-controls">
+            <button id="parseFit" type="button">Load EFT fit</button>
+            <select id="shipSelect" disabled><option value="">Load a fit first</option></select>
+          </div>
+          <p class="fineprint">Stat-equivalent type IDs listed in <code>dupes.json</code> are treated as interchangeable.</p>
+          <div class="fit-message" id="fitMessage" role="status"></div>
+          <div class="comparison" id="fitResults"></div>
+          <div class="shopping" id="shoppingPanel" hidden>
+            <button id="generateShopping" class="secondary" type="button">Generate shopping list</button>
+            <textarea id="shoppingList" rows="6" readonly hidden aria-label="Shopping list"></textarea>
+          </div>
+          <section class="fleet-planner">
+            <div class="balance-label">Saved fit plan</div>
+            <h3>Build a fleet plan</h3>
+            <div class="plan-fields">
+              <div><label for="fitStation">Destination station</label><select id="fitStation" disabled><option value="">Load assets first</option></select></div>
+              <div><label for="fitCopies">Desired copies</label><input id="fitCopies" type="number" min="0" step="1" value="1"></div>
+            </div>
+            <div id="escapeFitField" hidden><label for="escapeFit">Escape bay frigate fit</label><select id="escapeFit"><option value="">Choose a saved frigate fit</option></select></div>
+            <label for="fitShips">Ships assigned to this fit</label>
+            <select id="fitShips" multiple size="4" disabled><option value="">Load an EFT fit first</option></select>
+            <p class="fineprint">Use Ctrl/Cmd-click to select multiple ships. Unassigned copies are treated as entirely missing. Save a frigate with 0 copies to use it only as an escape-bay template.</p>
+            <div class="plan-actions"><button id="saveFit" type="button" disabled>Save fit plan</button><button id="cancelEdit" class="secondary" type="button" hidden>Cancel edit</button></div>
+            <div class="fit-message" id="planMessage" role="status"></div>
+            <div class="saved-fits" id="savedFits"></div>
+            <div class="fleet-shopping" id="fleetShoppingPanel" hidden>
+              <button id="generateFleetShopping" type="button">Generate fleet shopping list</button>
+              <textarea id="fleetShoppingList" rows="10" readonly hidden aria-label="Fleet shopping list"></textarea>
+            </div>
+          </section>
+        </section>
+        <div class="actions"><button id="refresh" type="button">Refresh assets</button><button id="logout" class="secondary" type="button">Disconnect</button></div>
+        <div class="error" id="dashError" role="alert"></div>
+        <p class="fineprint" id="updated"></p>
+      </section>
+    </main>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>
