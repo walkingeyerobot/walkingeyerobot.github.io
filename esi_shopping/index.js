@@ -2,7 +2,8 @@
   'use strict';
   const AUTHORIZE = 'https://login.eveonline.com/v2/oauth/authorize';
   const TOKEN = 'https://login.eveonline.com/v2/oauth/token';
-  const CLIENT_ID = 'ce68dbd0f94248f6b2d4e9c634f8a78f';
+  const CLIENT_ID = window.EVE_CLIENT_ID;
+  if (!CLIENT_ID) throw new Error('EVE_CLIENT_ID is not configured.');
   const SCOPES = [
     'esi-assets.read_assets.v1',
     'esi-universe.read_structures.v1',
@@ -879,6 +880,12 @@
       });
       if (!shipSelect.options.length)
         shipSelect.append(new Option(`No owned ${currentFit.hull} ships`, ''));
+      const comparedShipId = $('shipSelect').value;
+      if (comparedShipId) {
+        [...shipSelect.options].forEach((option) => {
+          option.selected = option.value === comparedShipId;
+        });
+      }
       shipSelect.disabled = false;
     } else {
       shipSelect.append(new Option('Load an EFT fit first', ''));
@@ -901,6 +908,14 @@
       escapeSelect.value = previousEscapeFit;
     escapeField.hidden = !currentFit?.isBattleship;
     $('saveFit').disabled = !currentFit || !assetGroups.length;
+  }
+
+  function selectComparedShipForPlan() {
+    const comparedShipId = $('shipSelect').value;
+    if (!comparedShipId || $('fitShips').disabled) return;
+    [...$('fitShips').options].forEach((option) => {
+      option.selected = option.value === comparedShipId;
+    });
   }
 
   function renderSavedFitPlans() {
@@ -1337,7 +1352,10 @@
   $('logout').addEventListener('click', logout);
   $('assetSearch').addEventListener('input', renderTree);
   $('parseFit').addEventListener('click', loadEftFit);
-  $('shipSelect').addEventListener('change', compareSelectedShip);
+  $('shipSelect').addEventListener('change', () => {
+    compareSelectedShip();
+    selectComparedShipForPlan();
+  });
   $('generateShopping').addEventListener('click', generateShoppingList);
   $('escapeFit').addEventListener('change', () => {
     if (!currentFit) return;
