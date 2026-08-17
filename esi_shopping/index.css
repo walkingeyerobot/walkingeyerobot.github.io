@@ -102,7 +102,9 @@
     .saved-fits { display:grid; gap:9px; margin-top:14px }
     .saved-fit { padding:13px; border:1px solid var(--line); background:rgba(255,255,255,.025) }
     .saved-fit.unassigned { border-color:#9b7430; background:rgba(232,196,107,.075); box-shadow:inset 3px 0 0 #e8c46b }
+    .saved-fit.misplaced { border-color:#a34b51; background:rgba(240,93,101,.07); box-shadow:inset 3px 0 0 var(--red) }
     .assignment-warning { color:#e8c46b!important; font-weight:700 }
+    .location-warning { color:#ff9aa0!important; font-weight:700 }
     .saved-fit-head { display:flex; justify-content:space-between; gap:12px; align-items:start }
     .saved-fit h4 { margin:0; font-size:13px }
     .saved-fit p { margin:5px 0 0; color:var(--muted); font-size:11px }

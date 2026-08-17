@@ -1016,6 +1016,23 @@
         warning.textContent = '⚠ No ships are assigned to this fit.';
         text.append(warning);
       }
+      const misplacedShips = (plan.shipIds || []).flatMap((shipId) => {
+        const ship = findAssetNode(shipId);
+        if (!ship) return [];
+        const group = findAssetGroupForItem(shipId);
+        if (!group || String(group.id) === String(plan.stationId)) return [];
+        return [{ ship, group }];
+      });
+      if (misplacedShips.length) {
+        card.classList.add('misplaced');
+        const warning = document.createElement('p');
+        warning.className = 'location-warning';
+        warning.textContent = `⚠ ${misplacedShips.length === 1 ? 'An assigned ship is' : `${misplacedShips.length} assigned ships are`} not in the destination station.`;
+        warning.title = misplacedShips
+          .map(({ ship, group }) => `${ship.name}: ${group.name}`)
+          .join('\n');
+        text.append(warning);
+      }
       const actions = document.createElement('div');
       actions.className = 'saved-fit-actions';
       const showDiff = document.createElement('button');
