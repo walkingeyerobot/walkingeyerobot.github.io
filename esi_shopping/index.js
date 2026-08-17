@@ -9,13 +9,14 @@
     'esi-universe.read_structures.v1',
   ];
   let assetGroups = [];
-  let treeExpanded = true;
+  let treeExpanded = false;
   let currentFit = null;
   let currentDiffRows = [];
   let duplicateTypeGroupsPromise;
   const SAVED_FITS_KEY = 'eve_saved_fit_plans_v1';
   let savedFitPlans = loadSavedFitPlans();
   let editingPlanId = '';
+  let editingOriginalHull = '';
   const hullClassCache = new Map();
   const $ = (id) => document.getElementById(id);
   const redirectUri = location.origin + location.pathname;
@@ -394,7 +395,7 @@
       node.typeName =
         typeNames.get(String(node.type_id)) || `Type ${node.type_id}`;
       node.customName = customNames.get(String(node.item_id)) || '';
-      node.name = node.customName
+      node.name = node.customName && node.customName !== 'None'
         ? `${node.typeName} — ${node.customName}`
         : node.typeName;
       const parent = byId.get(String(node.location_id));
@@ -567,6 +568,20 @@
     };
     assetGroups.forEach((group) => group.children.forEach(visit));
     return found;
+  }
+
+  function findAssetGroupForItem(itemId) {
+    if (!itemId) return null;
+    let matchedGroup = null;
+    const contains = (node) =>
+      String(node.item_id) === String(itemId) || node.children.some(contains);
+    for (const group of assetGroups) {
+      if (group.children.some(contains)) {
+        matchedGroup = group;
+        break;
+      }
+    }
+    return matchedGroup;
   }
 
   function parseEft(text) {
@@ -754,6 +769,7 @@
     $('shoppingList').hidden = true;
     $('shoppingList').value = '';
     $('shoppingPanel').hidden = !rows.some((item) => item.difference < 0);
+    $('closeFitDiff').hidden = false;
 
     if (!rows.length) {
       $('fitResults').replaceChildren();
@@ -766,7 +782,7 @@
     const table = document.createElement('table');
     const thead = document.createElement('thead');
     const heading = document.createElement('tr');
-    ['Item', 'Actual location', 'EFT', 'Ship', 'Difference'].forEach((text) => {
+    ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach((text) => {
       const th = document.createElement('th');
       th.textContent = text;
       heading.append(th);
@@ -812,6 +828,10 @@
     $('parseFit').disabled = true;
     try {
       const parsedFit = parseEft($('eftInput').value);
+      const changedHullWhileEditing =
+        Boolean(editingPlanId) &&
+        parsedFit.hull.toLocaleLowerCase() !==
+          editingOriginalHull.toLocaleLowerCase();
       $('fitMessage').textContent = 'Resolving EFT item types…';
       const [idsByName, canonicalById] = await Promise.all([
         resolveTypeIdsByName([
@@ -831,6 +851,12 @@
       currentFit = parsedFit;
       populateShipSelect();
       updateFitPlannerControls();
+      if (changedHullWhileEditing) {
+        const originalHull = editingOriginalHull;
+        cancelPlanEdit(
+          `Ship type changed from ${originalHull} to ${parsedFit.hull}. The original plan is unchanged; saving will create a new fit.`,
+        );
+      }
     } catch (error) {
       currentFit = null;
       populateShipSelect();
@@ -849,8 +875,51 @@
       .map((item) => `${Math.abs(item.difference)}x ${item.name}`);
     $('shoppingList').value = lines.join('\n');
     $('shoppingList').hidden = false;
+    $('closeShopping').hidden = false;
     $('shoppingList').focus();
     $('shoppingList').select();
+  }
+
+  function closeFitDiff() {
+    $('fitResults').replaceChildren();
+    $('closeFitDiff').hidden = true;
+    $('shoppingPanel').hidden = true;
+    $('shoppingList').hidden = true;
+    $('closeShopping').hidden = true;
+    $('fitMessage').textContent = '';
+  }
+
+  function closeShoppingList() {
+    $('shoppingList').hidden = true;
+    $('closeShopping').hidden = true;
+  }
+
+  function clearFitInput() {
+    if (editingPlanId) cancelPlanEdit('Edit canceled because the EFT input was cleared.');
+    $('eftInput').value = '';
+    currentFit = null;
+    currentDiffRows = [];
+    populateShipSelect();
+    updateFitPlannerControls();
+    closeFitDiff();
+  }
+
+  function updateCompareEscapeControl() {
+    const field = $('compareEscapeField');
+    const select = $('compareEscapeFit');
+    select.replaceChildren(new Option('Choose a saved frigate fit', ''));
+    savedFitPlans
+      .filter((plan) => plan.isFrigate)
+      .forEach((plan) =>
+        select.append(new Option(`${plan.name} · ${plan.hull}`, plan.id)),
+      );
+    if (
+      currentFit?.escapeFitPlanId &&
+      [...select.options].some(
+        (option) => option.value === currentFit.escapeFitPlanId,
+      )
+    ) select.value = currentFit.escapeFitPlanId;
+    field.hidden = !currentFit?.isBattleship;
   }
 
   function updateFitPlannerControls() {
@@ -860,7 +929,9 @@
     assetGroups.forEach((group) =>
       stationSelect.append(new Option(group.name, group.id)),
     );
-    if (
+    const comparedShipGroup = findAssetGroupForItem($('shipSelect').value);
+    if (comparedShipGroup) stationSelect.value = comparedShipGroup.id;
+    else if (
       previousStation &&
       assetGroups.some((group) => group.id === previousStation)
     )
@@ -907,6 +978,7 @@
     )
       escapeSelect.value = previousEscapeFit;
     escapeField.hidden = !currentFit?.isBattleship;
+    updateCompareEscapeControl();
     $('saveFit').disabled = !currentFit || !assetGroups.length;
   }
 
@@ -916,6 +988,8 @@
     [...$('fitShips').options].forEach((option) => {
       option.selected = option.value === comparedShipId;
     });
+    const group = findAssetGroupForItem(comparedShipId);
+    if (group) $('fitStation').value = group.id;
   }
 
   function renderSavedFitPlans() {
@@ -933,12 +1007,23 @@
       const assigned = plan.shipIds?.length || 0;
       detail.textContent = `${plan.copies} cop${plan.copies === 1 ? 'y' : 'ies'} at ${plan.stationName} · ${assigned} ship${assigned === 1 ? '' : 's'} assigned`;
       text.append(title, detail);
+      const exemptEscapeFrigate =
+        plan.isFrigate && /escape/i.test(plan.name || '');
+      if (assigned === 0 && !exemptEscapeFrigate) {
+        card.classList.add('unassigned');
+        const warning = document.createElement('p');
+        warning.className = 'assignment-warning';
+        warning.textContent = '⚠ No ships are assigned to this fit.';
+        text.append(warning);
+      }
       const actions = document.createElement('div');
       actions.className = 'saved-fit-actions';
       const showDiff = document.createElement('button');
       showDiff.type = 'button';
       showDiff.textContent = 'Show diff';
-      showDiff.addEventListener('click', () => showSavedPlanDiff(plan, card));
+      showDiff.addEventListener('click', () =>
+        showSavedPlanDiff(plan, card, showDiff),
+      );
       const edit = document.createElement('button');
       edit.type = 'button';
       edit.textContent = 'Edit';
@@ -978,6 +1063,8 @@
           persistFitPlans();
           if (currentFit?.isBattleship && currentFit.name === plan.name) {
             currentFit.escapeFitPlanId = select.value;
+            $('escapeFit').value = select.value;
+            $('compareEscapeFit').value = select.value;
             compareSelectedShip();
           }
         });
@@ -987,6 +1074,7 @@
     });
     $('fleetShoppingPanel').hidden = !savedFitPlans.length;
     $('fleetShoppingList').hidden = true;
+    $('closeFleetShopping').hidden = true;
   }
 
   async function calculateSavedPlanDiff(plan) {
@@ -1000,33 +1088,40 @@
     };
     const required = new Map();
     const present = new Map();
-    const add = (map, typeId, name, quantity) => {
+    const assignedShips = (plan.shipIds || [])
+      .map((shipId) => findAssetNode(shipId))
+      .filter(Boolean);
+    const effectiveCopies = Math.max(plan.copies, assignedShips.length);
+    const add = (map, typeId, name, quantity, location = '') => {
       const key = keyFor(typeId, name);
-      const entry = map.get(key) || { name, quantity: 0 };
+      const entry = map.get(key) || { name, quantity: 0, locations: new Set() };
       entry.quantity += quantity;
+      if (location) entry.locations.add(location);
       map.set(key, entry);
     };
-    add(required, plan.hullTypeId, plan.hull, plan.copies);
+    add(required, plan.hullTypeId, plan.hull, effectiveCopies);
     plan.items.forEach((item) =>
-      add(required, item.typeId, item.name, item.quantity * plan.copies),
+      add(required, item.typeId, item.name, item.quantity * effectiveCopies),
     );
     if (plan.isBattleship) {
       const escapeFit = savedFitPlans.find(
         (candidate) => candidate.id === plan.escapeFitPlanId,
       );
       if (!escapeFit) throw new Error(`${plan.name} needs an escape bay frigate fit.`);
-      add(required, escapeFit.hullTypeId, escapeFit.hull, plan.copies);
+      add(required, escapeFit.hullTypeId, escapeFit.hull, effectiveCopies);
       escapeFit.items.forEach((item) =>
-        add(required, item.typeId, item.name, item.quantity * plan.copies),
+        add(required, item.typeId, item.name, item.quantity * effectiveCopies),
       );
     }
-    (plan.shipIds || []).forEach((shipId) => {
-      const ship = findAssetNode(shipId);
-      if (!ship) return;
-      add(present, ship.type_id, ship.typeName, 1);
-      const addContents = (item) => {
-        add(present, item.type_id, item.typeName, item.quantity);
-        item.children.forEach(addContents);
+    assignedShips.forEach((ship) => {
+      const shipGroup = findAssetGroupForItem(ship.item_id);
+      add(present, ship.type_id, ship.typeName, 1, shipGroup?.name || 'Assets');
+      const addContents = (item, parentPath = '') => {
+        const locationPath = parentPath
+          ? `${parentPath}/${item.location_flag}`
+          : item.location_flag;
+        add(present, item.type_id, item.typeName, item.quantity, locationPath);
+        item.children.forEach((child) => addContents(child, locationPath));
       };
       ship.children.forEach(addContents);
     });
@@ -1041,50 +1136,69 @@
         required: requiredQuantity,
         present: presentQuantity,
         difference: presentQuantity - requiredQuantity,
+        locations: owned ? [...owned.locations].join(', ') : '—',
       };
     }).filter((item) => item.difference !== 0).sort((a, b) =>
       Number(a.difference >= 0) - Number(b.difference >= 0) || a.name.localeCompare(b.name),
     );
   }
 
-  async function showSavedPlanDiff(plan, card) {
+  async function showSavedPlanDiff(plan, card, button) {
     const existing = card.querySelector('.saved-fit-diff');
     if (existing) {
       existing.remove();
+      button.textContent = 'Show diff';
       return;
     }
+    button.textContent = 'Hide diff';
     const output = document.createElement('div');
     output.className = 'saved-fit-diff';
-    output.textContent = 'Calculating…';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close diff';
+    close.addEventListener('click', () => {
+      output.remove();
+      button.textContent = 'Show diff';
+    });
+    const content = document.createElement('div');
+    content.textContent = 'Calculating…';
+    output.append(close, content);
     card.append(output);
     try {
       const rows = await calculateSavedPlanDiff(plan);
       if (!rows.length) {
-        output.textContent = 'No differences — assigned ships satisfy this plan.';
+        content.textContent = 'No differences — assigned ships satisfy this plan.';
         return;
       }
       const table = document.createElement('table');
       const heading = document.createElement('tr');
-      ['Item', 'Required', 'Assigned', 'Difference'].forEach((value) => {
+      ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach((value) => {
         const th = document.createElement('th'); th.textContent = value; heading.append(th);
       });
       const thead = document.createElement('thead'); thead.append(heading); table.append(thead);
       const tbody = document.createElement('tbody');
       rows.forEach((item) => {
         const tr = document.createElement('tr');
-        [item.name, item.required, item.present, item.difference > 0 ? `+${item.difference}` : item.difference].forEach((value) => {
+        tr.className =
+          item.difference < 0
+            ? 'missing'
+            : item.required === 0
+              ? 'extra'
+              : 'match';
+        [item.name, item.locations, item.required, item.present, item.difference > 0 ? `+${item.difference}` : item.difference].forEach((value) => {
           const td = document.createElement('td'); td.textContent = value; tr.append(td);
         });
         tbody.append(tr);
       });
-      table.append(tbody); output.replaceChildren(table);
+      table.append(tbody); content.replaceChildren(table);
     } catch (error) {
-      output.textContent = error.message || String(error);
+      content.textContent = error.message || String(error);
     }
   }
 
   async function editSavedFitPlan(plan) {
     editingPlanId = plan.id;
+    editingOriginalHull = plan.hull;
     const itemLines = plan.items.map((item) =>
       `${item.name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`,
     );
@@ -1106,21 +1220,37 @@
     $('escapeFit').value = plan.escapeFitPlanId || '';
     $('saveFit').textContent = 'Update fit plan';
     $('cancelEdit').hidden = false;
+    $('editState').textContent = `Editing saved fit: ${plan.name} · ${plan.hull}`;
+    $('editState').hidden = false;
     $('planMessage').textContent = `Editing ${plan.name}.`;
     $('eftInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  function cancelPlanEdit() {
+  function cancelPlanEdit(message = 'Edit canceled. The saved fit was not changed.') {
     editingPlanId = '';
+    editingOriginalHull = '';
     $('saveFit').textContent = 'Save fit plan';
     $('cancelEdit').hidden = true;
-    $('planMessage').textContent = '';
+    $('editState').hidden = true;
+    $('editState').textContent = '';
+    $('planMessage').classList.remove('bad');
+    $('planMessage').textContent = message;
   }
 
   function saveCurrentFitPlan() {
     $('planMessage').classList.remove('bad');
     try {
       if (!currentFit) throw new Error('Load an EFT fit before saving a plan.');
+      if (
+        editingPlanId &&
+        currentFit.hull.toLocaleLowerCase() !==
+          editingOriginalHull.toLocaleLowerCase()
+      ) {
+        const originalHull = editingOriginalHull;
+        cancelPlanEdit(
+          `Ship type changed from ${originalHull} to ${currentFit.hull}; creating a new fit instead.`,
+        );
+      }
       const stationId = $('fitStation').value;
       const station = assetGroups.find((group) => group.id === stationId);
       if (!station) throw new Error('Choose a destination station.');
@@ -1132,8 +1262,6 @@
       const shipIds = [...$('fitShips').selectedOptions]
         .map((option) => option.value)
         .filter(Boolean);
-      if (shipIds.length > copies)
-        throw new Error('Assigned ships cannot exceed the desired copy count.');
       const duplicateAssignment = savedFitPlans.find((plan) =>
         plan.id !== editingPlanId &&
         plan.shipIds?.some((id) => shipIds.includes(String(id))),
@@ -1214,13 +1342,17 @@
             items: new Map(),
           });
         const inventory = stations.get(plan.stationId).items;
-        adjust(inventory, plan.hullTypeId, plan.hull, plan.copies);
+        const assignedShips = (plan.shipIds || [])
+          .map((shipId) => findAssetNode(shipId))
+          .filter(Boolean);
+        const effectiveCopies = Math.max(plan.copies, assignedShips.length);
+        adjust(inventory, plan.hullTypeId, plan.hull, effectiveCopies);
         plan.items.forEach((item) =>
           adjust(
             inventory,
             item.typeId,
             item.name,
-            item.quantity * plan.copies,
+            item.quantity * effectiveCopies,
           ),
         );
         if (plan.isBattleship) {
@@ -1229,24 +1361,28 @@
           );
           if (!escapeFit)
             throw new Error(`${plan.name} needs an escape bay frigate fit.`);
-          adjust(inventory, escapeFit.hullTypeId, escapeFit.hull, plan.copies);
+          adjust(
+            inventory,
+            escapeFit.hullTypeId,
+            escapeFit.hull,
+            effectiveCopies,
+          );
           escapeFit.items.forEach((item) =>
             adjust(
               inventory,
               item.typeId,
               item.name,
-              item.quantity * plan.copies,
+              item.quantity * effectiveCopies,
             ),
           );
         }
-        for (const shipId of plan.shipIds || []) {
-          if (usedShips.has(String(shipId)))
+        for (const ship of assignedShips) {
+          const shipId = String(ship.item_id);
+          if (usedShips.has(shipId))
             throw new Error(
               `Ship #${shipId} is assigned to more than one saved fit.`,
             );
-          usedShips.add(String(shipId));
-          const ship = findAssetNode(shipId);
-          if (!ship) continue;
+          usedShips.add(shipId);
           adjust(inventory, ship.type_id, ship.typeName, -1);
           const subtractContents = (item) => {
             adjust(inventory, item.type_id, item.typeName, -item.quantity);
@@ -1269,12 +1405,18 @@
       $('fleetShoppingList').value =
         sections.join('\n\n') || 'No items needed.';
       $('fleetShoppingList').hidden = false;
+      $('closeFleetShopping').hidden = false;
       $('fleetShoppingList').focus();
       $('fleetShoppingList').select();
     } catch (error) {
       $('planMessage').classList.add('bad');
       $('planMessage').textContent = error.message || String(error);
     }
+  }
+
+  function closeFleetShoppingList() {
+    $('fleetShoppingList').hidden = true;
+    $('closeFleetShopping').hidden = true;
   }
 
   async function loadAssets() {
@@ -1352,14 +1494,24 @@
   $('logout').addEventListener('click', logout);
   $('assetSearch').addEventListener('input', renderTree);
   $('parseFit').addEventListener('click', loadEftFit);
+  $('clearFit').addEventListener('click', clearFitInput);
   $('shipSelect').addEventListener('change', () => {
     compareSelectedShip();
     selectComparedShipForPlan();
   });
   $('generateShopping').addEventListener('click', generateShoppingList);
+  $('closeFitDiff').addEventListener('click', closeFitDiff);
+  $('closeShopping').addEventListener('click', closeShoppingList);
   $('escapeFit').addEventListener('change', () => {
     if (!currentFit) return;
     currentFit.escapeFitPlanId = $('escapeFit').value;
+    $('compareEscapeFit').value = currentFit.escapeFitPlanId;
+    compareSelectedShip();
+  });
+  $('compareEscapeFit').addEventListener('change', () => {
+    if (!currentFit) return;
+    currentFit.escapeFitPlanId = $('compareEscapeFit').value;
+    $('escapeFit').value = currentFit.escapeFitPlanId;
     compareSelectedShip();
   });
   $('saveFit').addEventListener('click', saveCurrentFitPlan);
@@ -1368,6 +1520,7 @@
     'click',
     generateFleetShoppingList,
   );
+  $('closeFleetShopping').addEventListener('click', closeFleetShoppingList);
   $('toggleTree').addEventListener('click', () => {
     treeExpanded = !treeExpanded;
     $('toggleTree').textContent = treeExpanded ? 'Collapse all' : 'Expand all';

@@ -39,26 +39,29 @@
           <div><div class="balance-label">Inventory</div><div class="asset-count" id="assetCount">—</div></div>
           <div class="currency" id="locationCount"></div>
         </div>
-        <div class="tree-toolbar"><input id="assetSearch" type="search" placeholder="Filter assets…"><button id="toggleTree" type="button">Collapse all</button></div>
+        <div class="tree-toolbar"><input id="assetSearch" type="search" placeholder="Filter assets…"><button id="toggleTree" type="button">Expand all</button></div>
         <div class="tree" id="assetTree" aria-label="Character assets"></div>
         <section class="fit-compare">
           <div class="fit-heading"><div><div class="balance-label">Fit comparison</div><h3>Compare an EFT fit</h3></div></div>
           <label for="eftInput">EFT fitting</label>
           <textarea id="eftInput" rows="8" spellcheck="false" placeholder="[Heron Navy Issue, Deepflow Rift Dredger]&#10;Inertial Stabilizers II&#10;&#10;Scan Rangefinding Array II&#10;&#10;Core Probe Launcher II, Sisters Core Scanner Probe"></textarea>
           <div class="fit-controls">
-            <button id="parseFit" type="button">Load EFT fit</button>
-            <select id="shipSelect" disabled><option value="">Load a fit first</option></select>
+            <div class="fit-input-actions"><button id="parseFit" type="button">Load EFT fit</button><button id="clearFit" class="secondary" type="button">Clear EFT</button></div>
+            <div class="comparison-selects"><select id="shipSelect" disabled><option value="">Load a fit first</option></select><div id="compareEscapeField" class="compare-escape" hidden><label for="compareEscapeFit">Escape bay frigate fit</label><select id="compareEscapeFit"><option value="">Choose a saved frigate fit</option></select></div></div>
           </div>
           <p class="fineprint">Stat-equivalent type IDs listed in <code>dupes.json</code> are treated as interchangeable.</p>
           <div class="fit-message" id="fitMessage" role="status"></div>
           <div class="comparison" id="fitResults"></div>
+          <button id="closeFitDiff" class="close-control" type="button" hidden>Close diff</button>
           <div class="shopping" id="shoppingPanel" hidden>
             <button id="generateShopping" class="secondary" type="button">Generate shopping list</button>
+            <button id="closeShopping" class="secondary" type="button" hidden>Close shopping list</button>
             <textarea id="shoppingList" rows="6" readonly hidden aria-label="Shopping list"></textarea>
           </div>
           <section class="fleet-planner">
             <div class="balance-label">Saved fit plan</div>
             <h3>Build a fleet plan</h3>
+            <div class="edit-state" id="editState" hidden role="status"></div>
             <div class="plan-fields">
               <div><label for="fitStation">Destination station</label><select id="fitStation" disabled><option value="">Load assets first</option></select></div>
               <div><label for="fitCopies">Desired copies</label><input id="fitCopies" type="number" min="0" step="1" value="1"></div>
@@ -72,6 +75,7 @@
             <div class="saved-fits" id="savedFits"></div>
             <div class="fleet-shopping" id="fleetShoppingPanel" hidden>
               <button id="generateFleetShopping" type="button">Generate fleet shopping list</button>
+              <button id="closeFleetShopping" class="secondary" type="button" hidden>Close shopping list</button>
               <textarea id="fleetShoppingList" rows="10" readonly hidden aria-label="Fleet shopping list"></textarea>
             </div>
           </section>
