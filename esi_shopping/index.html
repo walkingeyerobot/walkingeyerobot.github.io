@@ -14,34 +14,37 @@
       <div class="status" id="status">Disconnected</div>
     </header>
     <main>
-      <section class="intro">
-        <div class="eyebrow">EVE Online · Secure access</div>
-        <h1>Your hangars.<br>One view.</h1>
-        <p class="lede">Connect through EVE Online's official login and explore every asset owned by the selected character.</p>
-        <div class="privacy"><span>PKCE protected</span><span>No client secret</span><span>No backend</span></div>
-      </section>
-
       <section class="card setup" id="setup">
         <h2>Connect your character</h2>
         <p class="hint">Authorize this application through EVE Online's official login.</p>
-        <div class="callback"><strong>Registered callback URL</strong><span id="redirectUri"></span></div>
         <button id="login" type="button">Log in with EVE Online</button>
         <div class="error" id="error" role="alert"></div>
-        <p class="fineprint">The application must allow <code>esi-assets.read_assets.v1</code> and <code>esi-universe.read_structures.v1</code>, and use the exact callback URL shown above.</p>
+        <p class="fineprint">This application requests <code>esi-assets.read_assets.v1</code> and <code>esi-universe.read_structures.v1</code>.</p>
       </section>
 
       <section class="card dashboard" id="dashboard">
-        <div class="identity">
-          <img class="portrait" id="portrait" alt="Character portrait">
-          <div><h2 id="characterName">Capsuleer</h2><p id="characterId"></p></div>
-        </div>
-        <div class="asset-summary">
-          <div><div class="balance-label">Inventory</div><div class="asset-count" id="assetCount">—</div></div>
-          <div class="currency" id="locationCount"></div>
-        </div>
-        <div class="tree-toolbar"><input id="assetSearch" type="search" placeholder="Filter assets…"><button id="toggleTree" type="button">Expand all</button></div>
-        <div class="tree" id="assetTree" aria-label="Character assets"></div>
-        <section class="fit-compare">
+        <div class="character-controls"><select id="characterSelect" aria-label="Active character"></select><button id="addCharacter" type="button">Add character</button></div>
+        <nav class="tabs" role="tablist" aria-label="Application sections">
+          <button class="tab active" id="assetsTab" type="button" role="tab" aria-selected="true" aria-controls="assetsPanel" data-tab="assetsPanel">Assets</button>
+          <button class="tab" id="addFitTab" type="button" role="tab" aria-selected="false" aria-controls="addFitPanel" data-tab="addFitPanel">Add Fit</button>
+          <button class="tab" id="fleetPlanTab" type="button" role="tab" aria-selected="false" aria-controls="fleetPlanPanel" data-tab="fleetPlanPanel">Fleet Plan</button>
+        </nav>
+
+        <section class="tab-panel active" id="assetsPanel" role="tabpanel" aria-labelledby="assetsTab">
+          <div class="identity">
+            <img class="portrait" id="portrait" alt="Character portrait">
+            <div><h2 id="characterName">Capsuleer</h2><p id="characterId"></p></div>
+          </div>
+          <div class="asset-summary">
+            <div><div class="balance-label">Inventory</div><div class="asset-count" id="assetCount">—</div></div>
+            <div class="currency" id="locationCount"></div>
+          </div>
+          <div class="tree-toolbar"><button id="toggleTree" type="button">Expand all</button></div>
+          <div class="tree" id="assetTree" aria-label="Character assets"></div>
+        </section>
+
+        <section class="tab-panel" id="addFitPanel" role="tabpanel" aria-labelledby="addFitTab" hidden>
+          <section class="fit-compare">
           <div class="fit-heading"><div><div class="balance-label">Fit comparison</div><h3>Compare an EFT fit</h3></div></div>
           <label for="eftInput">EFT fitting</label>
           <textarea id="eftInput" rows="8" spellcheck="false" placeholder="[Heron Navy Issue, Deepflow Rift Dredger]&#10;Inertial Stabilizers II&#10;&#10;Scan Rangefinding Array II&#10;&#10;Core Probe Launcher II, Sisters Core Scanner Probe"></textarea>
@@ -69,17 +72,26 @@
             <div id="escapeFitField" hidden><label for="escapeFit">Escape bay frigate fit</label><select id="escapeFit"><option value="">Choose a saved frigate fit</option></select></div>
             <label for="fitShips">Ships assigned to this fit</label>
             <select id="fitShips" multiple size="4" disabled><option value="">Load an EFT fit first</option></select>
+            <div class="extra-targets" id="extraStationTargets"></div>
+            <button id="addStationTarget" class="secondary add-target" type="button" disabled>Add another station</button>
             <p class="fineprint">Use Ctrl/Cmd-click to select multiple ships. Unassigned copies are treated as entirely missing. Save a frigate with 0 copies to use it only as an escape-bay template.</p>
             <div class="plan-actions"><button id="saveFit" type="button" disabled>Save fit plan</button><button id="cancelEdit" class="secondary" type="button" hidden>Cancel edit</button></div>
             <div class="fit-message" id="planMessage" role="status"></div>
-            <div class="saved-fits" id="savedFits"></div>
-            <div class="fleet-shopping" id="fleetShoppingPanel" hidden>
-              <button id="generateFleetShopping" type="button">Generate fleet shopping list</button>
-              <button id="closeFleetShopping" class="secondary" type="button" hidden>Close shopping list</button>
-              <textarea id="fleetShoppingList" rows="10" readonly hidden aria-label="Fleet shopping list"></textarea>
-            </div>
+          </section>
           </section>
         </section>
+
+        <section class="tab-panel" id="fleetPlanPanel" role="tabpanel" aria-labelledby="fleetPlanTab" hidden>
+          <div class="fit-heading"><div><div class="balance-label">Saved fits</div><h3>Fleet plan</h3></div></div>
+          <div class="saved-fits" id="savedFits"></div>
+          <div class="shared-fits" id="sharedFits"></div>
+          <div class="fleet-shopping" id="fleetShoppingPanel" hidden>
+            <button id="generateFleetShopping" type="button">Generate fleet shopping list</button>
+            <button id="closeFleetShopping" class="secondary" type="button" hidden>Close shopping list</button>
+            <textarea id="fleetShoppingList" rows="10" readonly hidden aria-label="Fleet shopping list"></textarea>
+          </div>
+        </section>
+
         <div class="actions"><button id="refresh" type="button">Refresh assets</button><button id="logout" class="secondary" type="button">Disconnect</button></div>
         <div class="error" id="dashError" role="alert"></div>
         <p class="fineprint" id="updated"></p>

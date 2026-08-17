@@ -17,10 +17,12 @@
   let savedFitPlans = loadSavedFitPlans();
   let editingPlanId = '';
   let editingOriginalHull = '';
+  const CHARACTER_SESSIONS_KEY = 'eve_character_sessions_v1';
+  let characterSessions = loadCharacterSessions();
+  let activeCharacterId = sessionStorage.getItem('eve_active_character') || '';
   const hullClassCache = new Map();
   const $ = (id) => document.getElementById(id);
   const redirectUri = location.origin + location.pathname;
-  $('redirectUri').textContent = redirectUri;
 
   const bytesToBase64Url = (bytes) => {
     let binary = '';
@@ -113,24 +115,47 @@
     return tokens.access_token;
   }
 
-  function saveTokens(tokens) {
-    sessionStorage.setItem('eve_access_token', tokens.access_token);
-    if (tokens.refresh_token)
-      sessionStorage.setItem('eve_refresh_token', tokens.refresh_token);
+  function loadCharacterSessions() {
+    try {
+      const sessions = JSON.parse(
+        sessionStorage.getItem(CHARACTER_SESSIONS_KEY) || '{}',
+      );
+      return sessions && typeof sessions === 'object' ? sessions : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function persistCharacterSessions() {
     sessionStorage.setItem(
-      'eve_token_expires',
-      String(Date.now() + (tokens.expires_in - 30) * 1000),
+      CHARACTER_SESSIONS_KEY,
+      JSON.stringify(characterSessions),
     );
+    if (activeCharacterId)
+      sessionStorage.setItem('eve_active_character', activeCharacterId);
+    else sessionStorage.removeItem('eve_active_character');
+  }
+
+  function saveTokens(tokens) {
+    const claims = decodeJwt(tokens.access_token);
+    const characterId = validateClaims(claims);
+    const previous = characterSessions[characterId] || {};
+    characterSessions[characterId] = {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || previous.refreshToken || '',
+      expiresAt: Date.now() + (tokens.expires_in - 30) * 1000,
+      name: claims.name || previous.name || `Character ${characterId}`,
+    };
+    activeCharacterId = characterId;
+    persistCharacterSessions();
   }
 
   async function accessToken() {
-    const token = sessionStorage.getItem('eve_access_token');
-    if (
-      token &&
-      Date.now() < Number(sessionStorage.getItem('eve_token_expires'))
-    )
-      return token;
-    const refreshToken = sessionStorage.getItem('eve_refresh_token');
+    const session = characterSessions[activeCharacterId];
+    if (!session) throw new Error('Choose or add a character first.');
+    if (session.accessToken && Date.now() < Number(session.expiresAt))
+      return session.accessToken;
+    const refreshToken = session.refreshToken;
     if (!refreshToken)
       throw new Error('Your session has expired. Please connect again.');
     const body = new URLSearchParams({
@@ -395,9 +420,10 @@
       node.typeName =
         typeNames.get(String(node.type_id)) || `Type ${node.type_id}`;
       node.customName = customNames.get(String(node.item_id)) || '';
-      node.name = node.customName && node.customName !== 'None'
-        ? `${node.typeName} — ${node.customName}`
-        : node.typeName;
+      node.name =
+        node.customName && node.customName !== 'None'
+          ? `${node.typeName} — ${node.customName}`
+          : node.typeName;
       const parent = byId.get(String(node.location_id));
       if (parent && parent !== node) parent.children.push(node);
       else {
@@ -432,17 +458,10 @@
   }
 
   function renderTree() {
-    const query = $('assetSearch').value.trim().toLowerCase();
     const root = document.createElement('ul');
-    const matches = (node) =>
-      !query ||
-      node.name.toLowerCase().includes(query) ||
-      node.typeName.toLowerCase().includes(query) ||
-      node.children.some(matches);
     const renderNode = (node) => {
-      if (!matches(node)) return null;
       const li = document.createElement('li');
-      if (!treeExpanded && !query) li.classList.add('collapsed');
+      if (!treeExpanded) li.classList.add('collapsed');
       const row = document.createElement('div');
       row.className = 'tree-row';
       const twisty = document.createElement('button');
@@ -477,13 +496,8 @@
       return li;
     };
     assetGroups.forEach((group) => {
-      const visible =
-        !query ||
-        group.name.toLowerCase().includes(query) ||
-        group.children.some(matches);
-      if (!visible) return;
       const li = document.createElement('li');
-      if (!treeExpanded && !query) li.classList.add('collapsed');
+      if (!treeExpanded) li.classList.add('collapsed');
       const row = document.createElement('div');
       row.className = 'tree-row location-row';
       const twisty = document.createElement('button');
@@ -517,7 +531,7 @@
     if (!root.children.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = query ? 'No matching assets.' : 'No assets found.';
+      empty.textContent = 'No assets found.';
       $('assetTree').replaceChildren(empty);
     }
   }
@@ -582,6 +596,61 @@
       }
     }
     return matchedGroup;
+  }
+
+  function activateTab(panelId) {
+    document.querySelectorAll('.tab').forEach((tab) => {
+      const active = tab.dataset.tab === panelId;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+    document.querySelectorAll('.tab-panel').forEach((panel) => {
+      const active = panel.id === panelId;
+      panel.hidden = !active;
+      panel.classList.toggle('active', active);
+    });
+  }
+
+  function activeCharacterPlans() {
+    return savedFitPlans.filter(
+      (plan) => String(plan.characterId || '') === String(activeCharacterId),
+    );
+  }
+
+  function migrateUnscopedPlans() {
+    if (!activeCharacterId) return;
+    let changed = false;
+    savedFitPlans.forEach((plan) => {
+      if (!plan.characterId) {
+        plan.characterId = activeCharacterId;
+        changed = true;
+      }
+    });
+    if (changed) persistFitPlans();
+  }
+
+  function renderCharacterSelector() {
+    const select = $('characterSelect');
+    select.replaceChildren();
+    Object.entries(characterSessions)
+      .sort((a, b) => a[1].name.localeCompare(b[1].name))
+      .forEach(([id, session]) =>
+        select.append(new Option(session.name, id)),
+      );
+    select.value = activeCharacterId;
+  }
+
+  async function switchCharacter(characterId) {
+    if (!characterSessions[characterId] || characterId === activeCharacterId)
+      return;
+    if (editingPlanId) cancelPlanEdit('Edit canceled because the active character changed.');
+    clearFitInput();
+    activeCharacterId = characterId;
+    persistCharacterSessions();
+    renderCharacterSelector();
+    assetGroups = [];
+    await loadAssets();
   }
 
   function parseEft(text) {
@@ -782,11 +851,13 @@
     const table = document.createElement('table');
     const thead = document.createElement('thead');
     const heading = document.createElement('tr');
-    ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach((text) => {
-      const th = document.createElement('th');
-      th.textContent = text;
-      heading.append(th);
-    });
+    ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach(
+      (text) => {
+        const th = document.createElement('th');
+        th.textContent = text;
+        heading.append(th);
+      },
+    );
     thead.append(heading);
     table.append(thead);
     const tbody = document.createElement('tbody');
@@ -832,6 +903,8 @@
         Boolean(editingPlanId) &&
         parsedFit.hull.toLocaleLowerCase() !==
           editingOriginalHull.toLocaleLowerCase();
+      if (!editingPlanId || changedHullWhileEditing)
+        $('extraStationTargets').replaceChildren();
       $('fitMessage').textContent = 'Resolving EFT item types…';
       const [idsByName, canonicalById] = await Promise.all([
         resolveTypeIdsByName([
@@ -895,13 +968,24 @@
   }
 
   function clearFitInput() {
-    if (editingPlanId) cancelPlanEdit('Edit canceled because the EFT input was cleared.');
+    if (editingPlanId)
+      cancelPlanEdit('Edit canceled because the EFT input was cleared.');
     $('eftInput').value = '';
+    $('extraStationTargets').replaceChildren();
+    $('fitCopies').value = '1';
+    $('escapeFit').value = '';
+    $('compareEscapeFit').value = '';
     currentFit = null;
     currentDiffRows = [];
     populateShipSelect();
     updateFitPlannerControls();
+    $('fitStation').selectedIndex = -1;
     closeFitDiff();
+  }
+
+  function cancelAndClearPlanEdit() {
+    cancelPlanEdit();
+    clearFitInput();
   }
 
   function updateCompareEscapeControl() {
@@ -918,8 +1002,103 @@
       [...select.options].some(
         (option) => option.value === currentFit.escapeFitPlanId,
       )
-    ) select.value = currentFit.escapeFitPlanId;
+    )
+      select.value = currentFit.escapeFitPlanId;
     field.hidden = !currentFit?.isBattleship;
+  }
+
+  function targetsForPlan(plan) {
+    if (Array.isArray(plan.targets) && plan.targets.length) return plan.targets;
+    return [{
+      stationId: plan.stationId,
+      stationName: plan.stationName,
+      copies: plan.copies ?? 0,
+      shipIds: plan.shipIds || [],
+    }];
+  }
+
+  function addStationTargetEditor(target = {}) {
+    const row = document.createElement('section');
+    row.className = 'station-target';
+    const head = document.createElement('div');
+    head.className = 'station-target-head';
+    const title = document.createElement('strong');
+    title.textContent = 'Additional station target';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => row.remove());
+    head.append(title, remove);
+    const fields = document.createElement('div');
+    fields.className = 'plan-fields';
+    const stationWrap = document.createElement('div');
+    const stationLabel = document.createElement('label');
+    stationLabel.textContent = 'Destination station';
+    const station = document.createElement('select');
+    station.className = 'target-station';
+    assetGroups.forEach((group) =>
+      station.append(new Option(group.name, group.id)),
+    );
+    if (
+      target.stationId &&
+      ![...station.options].some(
+        (option) => option.value === String(target.stationId),
+      )
+    ) station.append(new Option(target.stationName || `Hangar #${target.stationId}`, target.stationId));
+    if (target.stationId) station.value = target.stationId;
+    const copiesWrap = document.createElement('div');
+    const copiesLabel = document.createElement('label');
+    copiesLabel.textContent = 'Desired copies';
+    const copies = document.createElement('input');
+    copies.className = 'target-copies';
+    copies.type = 'number';
+    copies.min = '0';
+    copies.step = '1';
+    copies.value = target.copies ?? 1;
+    stationWrap.append(stationLabel, station);
+    copiesWrap.append(copiesLabel, copies);
+    fields.append(stationWrap, copiesWrap);
+    const shipsLabel = document.createElement('label');
+    shipsLabel.textContent = 'Ships assigned to this station';
+    const ships = document.createElement('select');
+    ships.className = 'target-ships';
+    ships.multiple = true;
+    ships.size = 4;
+    if (currentFit) {
+      ownedShipsForFit(currentFit).forEach(({ node, locationName }) =>
+        ships.append(new Option(`${node.name} — ${locationName} (#${node.item_id})`, String(node.item_id))),
+      );
+    }
+    const selectedIds = (target.shipIds || []).map(String);
+    [...ships.options].forEach((option) => {
+      option.selected = selectedIds.includes(option.value);
+    });
+    row.append(head, fields, shipsLabel, ships);
+    $('extraStationTargets').append(row);
+  }
+
+  function collectStationTargets() {
+    const primaryStation = assetGroups.find(
+      (group) => String(group.id) === String($('fitStation').value),
+    );
+    const targets = [{
+      stationId: $('fitStation').value,
+      stationName: primaryStation?.name || $('fitStation').selectedOptions[0]?.text || '',
+      copies: Number($('fitCopies').value),
+      shipIds: [...$('fitShips').selectedOptions].map((option) => option.value).filter(Boolean),
+    }];
+    document.querySelectorAll('.station-target').forEach((row) => {
+      const station = row.querySelector('.target-station');
+      targets.push({
+        stationId: station.value,
+        stationName: station.selectedOptions[0]?.text || '',
+        copies: Number(row.querySelector('.target-copies').value),
+        shipIds: [...row.querySelector('.target-ships').selectedOptions]
+          .map((option) => option.value)
+          .filter(Boolean),
+      });
+    });
+    return targets;
   }
 
   function updateFitPlannerControls() {
@@ -980,6 +1159,7 @@
     escapeField.hidden = !currentFit?.isBattleship;
     updateCompareEscapeControl();
     $('saveFit').disabled = !currentFit || !assetGroups.length;
+    $('addStationTarget').disabled = !currentFit || !assetGroups.length;
   }
 
   function selectComparedShipForPlan() {
@@ -995,7 +1175,8 @@
   function renderSavedFitPlans() {
     const root = $('savedFits');
     root.replaceChildren();
-    savedFitPlans.forEach((plan) => {
+    const characterPlans = activeCharacterPlans();
+    characterPlans.forEach((plan) => {
       const card = document.createElement('article');
       card.className = 'saved-fit';
       const head = document.createElement('div');
@@ -1003,10 +1184,19 @@
       const text = document.createElement('div');
       const title = document.createElement('h4');
       title.textContent = `${plan.name} · ${plan.hull}`;
+      const source = document.createElement('p');
+      source.textContent = `Shared by ${plan.characterName || 'another character'}`;
       const detail = document.createElement('p');
-      const assigned = plan.shipIds?.length || 0;
-      detail.textContent = `${plan.copies} cop${plan.copies === 1 ? 'y' : 'ies'} at ${plan.stationName} · ${assigned} ship${assigned === 1 ? '' : 's'} assigned`;
+      const targets = targetsForPlan(plan);
+      const assigned = targets.reduce((total, target) => total + (target.shipIds?.length || 0), 0);
+      const copies = targets.reduce((total, target) => total + target.copies, 0);
+      detail.textContent = `${copies} total cop${copies === 1 ? 'y' : 'ies'} across ${targets.length} station${targets.length === 1 ? '' : 's'} · ${assigned} ship${assigned === 1 ? '' : 's'} assigned`;
       text.append(title, detail);
+      targets.forEach((target) => {
+        const targetDetail = document.createElement('p');
+        targetDetail.textContent = `${target.stationName}: ${target.copies} cop${target.copies === 1 ? 'y' : 'ies'}, ${target.shipIds?.length || 0} assigned`;
+        text.append(targetDetail);
+      });
       const exemptEscapeFrigate =
         plan.isFrigate && /escape/i.test(plan.name || '');
       if (assigned === 0 && !exemptEscapeFrigate) {
@@ -1016,13 +1206,15 @@
         warning.textContent = '⚠ No ships are assigned to this fit.';
         text.append(warning);
       }
-      const misplacedShips = (plan.shipIds || []).flatMap((shipId) => {
-        const ship = findAssetNode(shipId);
-        if (!ship) return [];
-        const group = findAssetGroupForItem(shipId);
-        if (!group || String(group.id) === String(plan.stationId)) return [];
-        return [{ ship, group }];
-      });
+      const misplacedShips = targets.flatMap((target) =>
+        (target.shipIds || []).flatMap((shipId) => {
+          const ship = findAssetNode(shipId);
+          if (!ship) return [];
+          const group = findAssetGroupForItem(shipId);
+          if (!group || String(group.id) === String(target.stationId)) return [];
+          return [{ ship, group }];
+        }),
+      );
       if (misplacedShips.length) {
         card.classList.add('misplaced');
         const warning = document.createElement('p');
@@ -1089,9 +1281,63 @@
       }
       root.append(card);
     });
-    $('fleetShoppingPanel').hidden = !savedFitPlans.length;
+    $('fleetShoppingPanel').hidden = !characterPlans.length;
     $('fleetShoppingList').hidden = true;
     $('closeFleetShopping').hidden = true;
+    renderSharedFits();
+  }
+
+  function renderSharedFits() {
+    const root = $('sharedFits');
+    root.replaceChildren();
+    const existingKeys = new Set(
+      activeCharacterPlans().map(
+        (plan) => `${plan.hull.toLocaleLowerCase()}|${plan.name.toLocaleLowerCase()}`,
+      ),
+    );
+    const shared = savedFitPlans.filter((plan) => {
+      const key = `${plan.hull.toLocaleLowerCase()}|${plan.name.toLocaleLowerCase()}`;
+      if (String(plan.characterId) === String(activeCharacterId) || existingKeys.has(key))
+        return false;
+      existingKeys.add(key);
+      return true;
+    });
+    if (!shared.length) return;
+    const heading = document.createElement('div');
+    heading.className = 'balance-label';
+    heading.textContent = 'Fits shared by other characters';
+    root.append(heading);
+    shared.forEach((plan) => {
+      const card = document.createElement('article');
+      card.className = 'saved-fit';
+      const title = document.createElement('h4');
+      title.textContent = `${plan.name} · ${plan.hull}`;
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.textContent = 'Use for this character';
+      use.addEventListener('click', () => {
+        const station = assetGroups[0];
+        const clone = {
+          ...plan,
+          id: crypto.randomUUID ? crypto.randomUUID() : randomString(18),
+          characterId: activeCharacterId,
+          characterName:
+            characterSessions[activeCharacterId]?.name || `Character ${activeCharacterId}`,
+          targets: station
+            ? [{ stationId: station.id, stationName: station.name, copies: 0, shipIds: [] }]
+            : [],
+          stationId: station?.id || '',
+          stationName: station?.name || '',
+          copies: 0,
+          shipIds: [],
+        };
+        savedFitPlans.push(clone);
+        persistFitPlans();
+        renderSavedFitPlans();
+      });
+      card.append(title, source, use);
+      root.append(card);
+    });
   }
 
   async function calculateSavedPlanDiff(plan) {
@@ -1105,10 +1351,21 @@
     };
     const required = new Map();
     const present = new Map();
-    const assignedShips = (plan.shipIds || [])
-      .map((shipId) => findAssetNode(shipId))
-      .filter(Boolean);
-    const effectiveCopies = Math.max(plan.copies, assignedShips.length);
+    const targetStates = targetsForPlan(plan).map((target) => {
+      const assignedShips = (target.shipIds || [])
+        .map((shipId) => findAssetNode(shipId))
+        .filter(Boolean);
+      return {
+        target,
+        assignedShips,
+        effectiveCopies: Math.max(target.copies, assignedShips.length),
+      };
+    });
+    const assignedShips = targetStates.flatMap((state) => state.assignedShips);
+    const effectiveCopies = targetStates.reduce(
+      (total, state) => total + state.effectiveCopies,
+      0,
+    );
     const add = (map, typeId, name, quantity, location = '') => {
       const key = keyFor(typeId, name);
       const entry = map.get(key) || { name, quantity: 0, locations: new Set() };
@@ -1124,7 +1381,8 @@
       const escapeFit = savedFitPlans.find(
         (candidate) => candidate.id === plan.escapeFitPlanId,
       );
-      if (!escapeFit) throw new Error(`${plan.name} needs an escape bay frigate fit.`);
+      if (!escapeFit)
+        throw new Error(`${plan.name} needs an escape bay frigate fit.`);
       add(required, escapeFit.hullTypeId, escapeFit.hull, effectiveCopies);
       escapeFit.items.forEach((item) =>
         add(required, item.typeId, item.name, item.quantity * effectiveCopies),
@@ -1143,21 +1401,26 @@
       ship.children.forEach(addContents);
     });
     const keys = new Set([...required.keys(), ...present.keys()]);
-    return [...keys].map((key) => {
-      const wanted = required.get(key);
-      const owned = present.get(key);
-      const requiredQuantity = wanted?.quantity || 0;
-      const presentQuantity = owned?.quantity || 0;
-      return {
-        name: wanted?.name || owned.name,
-        required: requiredQuantity,
-        present: presentQuantity,
-        difference: presentQuantity - requiredQuantity,
-        locations: owned ? [...owned.locations].join(', ') : '—',
-      };
-    }).filter((item) => item.difference !== 0).sort((a, b) =>
-      Number(a.difference >= 0) - Number(b.difference >= 0) || a.name.localeCompare(b.name),
-    );
+    return [...keys]
+      .map((key) => {
+        const wanted = required.get(key);
+        const owned = present.get(key);
+        const requiredQuantity = wanted?.quantity || 0;
+        const presentQuantity = owned?.quantity || 0;
+        return {
+          name: wanted?.name || owned.name,
+          required: requiredQuantity,
+          present: presentQuantity,
+          difference: presentQuantity - requiredQuantity,
+          locations: owned ? [...owned.locations].join(', ') : '—',
+        };
+      })
+      .filter((item) => item.difference !== 0)
+      .sort(
+        (a, b) =>
+          Number(a.difference >= 0) - Number(b.difference >= 0) ||
+          a.name.localeCompare(b.name),
+      );
   }
 
   async function showSavedPlanDiff(plan, card, button) {
@@ -1184,15 +1447,22 @@
     try {
       const rows = await calculateSavedPlanDiff(plan);
       if (!rows.length) {
-        content.textContent = 'No differences — assigned ships satisfy this plan.';
+        content.textContent =
+          'No differences — assigned ships satisfy this plan.';
         return;
       }
       const table = document.createElement('table');
       const heading = document.createElement('tr');
-      ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach((value) => {
-        const th = document.createElement('th'); th.textContent = value; heading.append(th);
-      });
-      const thead = document.createElement('thead'); thead.append(heading); table.append(thead);
+      ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach(
+        (value) => {
+          const th = document.createElement('th');
+          th.textContent = value;
+          heading.append(th);
+        },
+      );
+      const thead = document.createElement('thead');
+      thead.append(heading);
+      table.append(thead);
       const tbody = document.createElement('tbody');
       rows.forEach((item) => {
         const tr = document.createElement('tr');
@@ -1202,24 +1472,35 @@
             : item.required === 0
               ? 'extra'
               : 'match';
-        [item.name, item.locations, item.required, item.present, item.difference > 0 ? `+${item.difference}` : item.difference].forEach((value) => {
-          const td = document.createElement('td'); td.textContent = value; tr.append(td);
+        [
+          item.name,
+          item.locations,
+          item.required,
+          item.present,
+          item.difference > 0 ? `+${item.difference}` : item.difference,
+        ].forEach((value) => {
+          const td = document.createElement('td');
+          td.textContent = value;
+          tr.append(td);
         });
         tbody.append(tr);
       });
-      table.append(tbody); content.replaceChildren(table);
+      table.append(tbody);
+      content.replaceChildren(table);
     } catch (error) {
       content.textContent = error.message || String(error);
     }
   }
 
   async function editSavedFitPlan(plan) {
+    activateTab('addFitPanel');
     editingPlanId = plan.id;
     editingOriginalHull = plan.hull;
-    const itemLines = plan.items.map((item) =>
-      `${item.name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`,
+    const itemLines = plan.items.map(
+      (item) => `${item.name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`,
     );
-    $('eftInput').value = `[${plan.hull}, ${plan.name}]\n${itemLines.join('\n')}`;
+    $('eftInput').value =
+      `[${plan.hull}, ${plan.name}]\n${itemLines.join('\n')}`;
     await loadEftFit();
     if (!currentFit) {
       cancelPlanEdit();
@@ -1227,23 +1508,34 @@
     }
     currentFit.escapeFitPlanId = plan.escapeFitPlanId || '';
     updateFitPlannerControls();
-    if (![...$('fitStation').options].some((option) => option.value === plan.stationId))
-      $('fitStation').append(new Option(plan.stationName, plan.stationId));
-    $('fitStation').value = plan.stationId;
-    $('fitCopies').value = plan.copies;
+    const targets = targetsForPlan(plan);
+    const primary = targets[0];
+    if (
+      ![...$('fitStation').options].some(
+        (option) => option.value === String(primary.stationId),
+      )
+    )
+      $('fitStation').append(new Option(primary.stationName, primary.stationId));
+    $('fitStation').value = primary.stationId;
+    $('fitCopies').value = primary.copies;
     [...$('fitShips').options].forEach((option) => {
-      option.selected = (plan.shipIds || []).map(String).includes(option.value);
+      option.selected = (primary.shipIds || []).map(String).includes(option.value);
     });
+    $('extraStationTargets').replaceChildren();
+    targets.slice(1).forEach(addStationTargetEditor);
     $('escapeFit').value = plan.escapeFitPlanId || '';
     $('saveFit').textContent = 'Update fit plan';
     $('cancelEdit').hidden = false;
-    $('editState').textContent = `Editing saved fit: ${plan.name} · ${plan.hull}`;
+    $('editState').textContent =
+      `Editing saved fit: ${plan.name} · ${plan.hull}`;
     $('editState').hidden = false;
     $('planMessage').textContent = `Editing ${plan.name}.`;
     $('eftInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  function cancelPlanEdit(message = 'Edit canceled. The saved fit was not changed.') {
+  function cancelPlanEdit(
+    message = 'Edit canceled. The saved fit was not changed.',
+  ) {
     editingPlanId = '';
     editingOriginalHull = '';
     $('saveFit').textContent = 'Save fit plan';
@@ -1268,20 +1560,21 @@
           `Ship type changed from ${originalHull} to ${currentFit.hull}; creating a new fit instead.`,
         );
       }
-      const stationId = $('fitStation').value;
-      const station = assetGroups.find((group) => group.id === stationId);
-      if (!station) throw new Error('Choose a destination station.');
-      const copies = Number($('fitCopies').value);
-      if (!Number.isSafeInteger(copies) || copies < 0)
-        throw new Error(
-          'Desired copies must be zero or a positive whole number.',
-        );
-      const shipIds = [...$('fitShips').selectedOptions]
-        .map((option) => option.value)
-        .filter(Boolean);
-      const duplicateAssignment = savedFitPlans.find((plan) =>
-        plan.id !== editingPlanId &&
-        plan.shipIds?.some((id) => shipIds.includes(String(id))),
+      const targets = collectStationTargets();
+      targets.forEach((target) => {
+        if (!target.stationId) throw new Error('Choose a destination for every station target.');
+        if (!Number.isSafeInteger(target.copies) || target.copies < 0)
+          throw new Error('Desired copies must be zero or a positive whole number.');
+      });
+      const shipIds = targets.flatMap((target) => target.shipIds);
+      if (new Set(shipIds).size !== shipIds.length)
+        throw new Error('A ship cannot be assigned to more than one station target.');
+      const duplicateAssignment = activeCharacterPlans().find(
+        (plan) =>
+          plan.id !== editingPlanId &&
+          targetsForPlan(plan).some((target) =>
+            target.shipIds?.some((id) => shipIds.includes(String(id))),
+          ),
       );
       if (duplicateAssignment)
         throw new Error(
@@ -1295,7 +1588,12 @@
           'Choose a saved frigate fit for the battleship escape bay.',
         );
       const savedPlan = {
-        id: editingPlanId || (crypto.randomUUID ? crypto.randomUUID() : randomString(18)),
+        id:
+          editingPlanId ||
+          (crypto.randomUUID ? crypto.randomUUID() : randomString(18)),
+        characterId: activeCharacterId,
+        characterName:
+          characterSessions[activeCharacterId]?.name || `Character ${activeCharacterId}`,
         name: currentFit.name,
         hull: currentFit.hull,
         hullTypeId: currentFit.hullTypeId,
@@ -1304,17 +1602,20 @@
           quantity: item.quantity,
           typeId: item.typeId,
         })),
-        stationId,
-        stationName: station.name,
-        copies,
-        shipIds,
+        targets,
+        stationId: targets[0].stationId,
+        stationName: targets[0].stationName,
+        copies: targets[0].copies,
+        shipIds: targets[0].shipIds,
         isBattleship: currentFit.isBattleship,
         isFrigate: currentFit.isFrigate,
         groupName: currentFit.groupName,
         escapeFitPlanId,
       };
       if (editingPlanId) {
-        const index = savedFitPlans.findIndex((plan) => plan.id === editingPlanId);
+        const index = savedFitPlans.findIndex(
+          (plan) => plan.id === editingPlanId,
+        );
         if (index >= 0) savedFitPlans[index] = savedPlan;
         else savedFitPlans.push(savedPlan);
       } else savedFitPlans.push(savedPlan);
@@ -1333,7 +1634,8 @@
   async function generateFleetShoppingList() {
     $('planMessage').classList.remove('bad');
     try {
-      if (!savedFitPlans.length)
+      const characterPlans = activeCharacterPlans();
+      if (!characterPlans.length)
         throw new Error('Save at least one fit plan first.');
       const canonicalById = await duplicateTypeGroups();
       const keyFor = (typeId, name) => {
@@ -1352,39 +1654,25 @@
         inventory.set(key, entry);
       };
 
-      for (const plan of savedFitPlans) {
-        if (!stations.has(plan.stationId))
-          stations.set(plan.stationId, {
-            name: plan.stationName,
-            items: new Map(),
-          });
-        const inventory = stations.get(plan.stationId).items;
-        const assignedShips = (plan.shipIds || [])
-          .map((shipId) => findAssetNode(shipId))
-          .filter(Boolean);
-        const effectiveCopies = Math.max(plan.copies, assignedShips.length);
-        adjust(inventory, plan.hullTypeId, plan.hull, effectiveCopies);
-        plan.items.forEach((item) =>
-          adjust(
-            inventory,
-            item.typeId,
-            item.name,
-            item.quantity * effectiveCopies,
-          ),
-        );
-        if (plan.isBattleship) {
-          const escapeFit = savedFitPlans.find(
-            (candidate) => candidate.id === plan.escapeFitPlanId,
-          );
-          if (!escapeFit)
-            throw new Error(`${plan.name} needs an escape bay frigate fit.`);
-          adjust(
-            inventory,
-            escapeFit.hullTypeId,
-            escapeFit.hull,
-            effectiveCopies,
-          );
-          escapeFit.items.forEach((item) =>
+      for (const plan of characterPlans) {
+        const escapeFit = plan.isBattleship
+          ? savedFitPlans.find((candidate) => candidate.id === plan.escapeFitPlanId)
+          : null;
+        if (plan.isBattleship && !escapeFit)
+          throw new Error(`${plan.name} needs an escape bay frigate fit.`);
+        for (const target of targetsForPlan(plan)) {
+          if (!stations.has(target.stationId))
+            stations.set(target.stationId, {
+              name: target.stationName,
+              items: new Map(),
+            });
+          const inventory = stations.get(target.stationId).items;
+          const assignedShips = (target.shipIds || [])
+            .map((shipId) => findAssetNode(shipId))
+            .filter(Boolean);
+          const effectiveCopies = Math.max(target.copies, assignedShips.length);
+          adjust(inventory, plan.hullTypeId, plan.hull, effectiveCopies);
+          plan.items.forEach((item) =>
             adjust(
               inventory,
               item.typeId,
@@ -1392,20 +1680,24 @@
               item.quantity * effectiveCopies,
             ),
           );
-        }
-        for (const ship of assignedShips) {
-          const shipId = String(ship.item_id);
-          if (usedShips.has(shipId))
-            throw new Error(
-              `Ship #${shipId} is assigned to more than one saved fit.`,
+          if (escapeFit) {
+            adjust(inventory, escapeFit.hullTypeId, escapeFit.hull, effectiveCopies);
+            escapeFit.items.forEach((item) =>
+              adjust(inventory, item.typeId, item.name, item.quantity * effectiveCopies),
             );
-          usedShips.add(shipId);
-          adjust(inventory, ship.type_id, ship.typeName, -1);
-          const subtractContents = (item) => {
-            adjust(inventory, item.type_id, item.typeName, -item.quantity);
-            item.children.forEach(subtractContents);
-          };
-          ship.children.forEach(subtractContents);
+          }
+          for (const ship of assignedShips) {
+            const shipId = String(ship.item_id);
+            if (usedShips.has(shipId))
+              throw new Error(`Ship #${shipId} is assigned to more than one saved fit.`);
+            usedShips.add(shipId);
+            adjust(inventory, ship.type_id, ship.typeName, -1);
+            const subtractContents = (item) => {
+              adjust(inventory, item.type_id, item.typeName, -item.quantity);
+              item.children.forEach(subtractContents);
+            };
+            ship.children.forEach(subtractContents);
+          }
         }
       }
 
@@ -1444,6 +1736,10 @@
       const token = await accessToken();
       const claims = decodeJwt(token);
       const id = validateClaims(claims);
+      activeCharacterId = id;
+      persistCharacterSessions();
+      migrateUnscopedPlans();
+      renderCharacterSelector();
       const assets = await fetchAllAssets(id, token);
       const typeNames = await resolveNames(
         assets.map((asset) => asset.type_id),
@@ -1490,7 +1786,7 @@
     }
   }
 
-  function logout() {
+  async function logout() {
     [
       'eve_access_token',
       'eve_refresh_token',
@@ -1498,18 +1794,41 @@
       'eve_pkce_verifier',
       'eve_oauth_state',
     ].forEach((k) => sessionStorage.removeItem(k));
+    if (activeCharacterId) delete characterSessions[activeCharacterId];
+    activeCharacterId = Object.keys(characterSessions)[0] || '';
+    persistCharacterSessions();
     history.replaceState({}, document.title, redirectUri);
+    clearError();
+    if (activeCharacterId) {
+      renderCharacterSelector();
+      await loadAssets();
+      return;
+    }
+    assetGroups = [];
     $('dashboard').style.display = 'none';
     $('setup').style.display = 'block';
     $('status').textContent = 'Disconnected';
     $('status').classList.remove('online');
-    clearError();
   }
 
   $('login').addEventListener('click', beginLogin);
+  $('addCharacter').addEventListener('click', beginLogin);
+  $('characterSelect').addEventListener('change', () =>
+    switchCharacter($('characterSelect').value),
+  );
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => activateTab(tab.dataset.tab));
+    tab.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      const tabs = [...document.querySelectorAll('.tab')];
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const next = tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
+      activateTab(next.dataset.tab);
+      next.focus();
+    });
+  });
   $('refresh').addEventListener('click', loadAssets);
   $('logout').addEventListener('click', logout);
-  $('assetSearch').addEventListener('input', renderTree);
   $('parseFit').addEventListener('click', loadEftFit);
   $('clearFit').addEventListener('click', clearFitInput);
   $('shipSelect').addEventListener('change', () => {
@@ -1532,7 +1851,10 @@
     compareSelectedShip();
   });
   $('saveFit').addEventListener('click', saveCurrentFitPlan);
-  $('cancelEdit').addEventListener('click', cancelPlanEdit);
+  $('addStationTarget').addEventListener('click', () =>
+    addStationTargetEditor(),
+  );
+  $('cancelEdit').addEventListener('click', cancelAndClearPlanEdit);
   $('generateFleetShopping').addEventListener(
     'click',
     generateFleetShoppingList,
@@ -1545,6 +1867,7 @@
   });
 
   (async () => {
+    activateTab('assetsPanel');
     try {
       await hydrateSavedPlanClasses();
     } catch (_) {
@@ -1552,15 +1875,22 @@
     }
     renderSavedFitPlans();
     const query = new URLSearchParams(location.search);
-    if (query.get('error'))
-      return showError(query.get('error_description') || query.get('error'));
-    try {
-      if (query.get('code')) await exchangeCode(query.get('code'));
-      if (
-        sessionStorage.getItem('eve_access_token') ||
-        sessionStorage.getItem('eve_refresh_token')
-      )
+    if (query.get('error')) {
+      history.replaceState({}, document.title, redirectUri);
+      const message = query.get('error_description') || query.get('error');
+      if (activeCharacterId) {
         await loadAssets();
+        return showError(message, true);
+      }
+      return showError(message);
+    }
+    try {
+      if (query.get('code')) {
+        await exchangeCode(query.get('code'));
+      }
+      if (!activeCharacterId)
+        activeCharacterId = Object.keys(characterSessions)[0] || '';
+      if (activeCharacterId) await loadAssets();
     } catch (error) {
       history.replaceState({}, document.title, redirectUri);
       logout();
