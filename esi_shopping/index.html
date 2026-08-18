@@ -11,7 +11,7 @@
   <div class="shell">
     <header>
       <div class="brand"><div class="mark">◈</div><span>Ronnie's Shopping List</span></div>
-      <div class="status" id="status">Disconnected</div>
+      <div class="status" id="status" role="status" aria-live="polite">Disconnected</div>
     </header>
     <main>
       <section class="card setup" id="setup">
@@ -25,12 +25,12 @@
       <section class="card dashboard" id="dashboard">
         <div class="character-controls"><select id="characterSelect" aria-label="Active character"></select><button id="addCharacter" type="button">Add character</button></div>
         <nav class="tabs" role="tablist" aria-label="Application sections">
-          <button class="tab active" id="assetsTab" type="button" role="tab" aria-selected="true" aria-controls="assetsPanel" data-tab="assetsPanel">Assets</button>
+          <button class="tab active" id="fleetPlanTab" type="button" role="tab" aria-selected="true" aria-controls="fleetPlanPanel" data-tab="fleetPlanPanel">Fleet Plan</button>
           <button class="tab" id="addFitTab" type="button" role="tab" aria-selected="false" aria-controls="addFitPanel" data-tab="addFitPanel">Add Fit</button>
-          <button class="tab" id="fleetPlanTab" type="button" role="tab" aria-selected="false" aria-controls="fleetPlanPanel" data-tab="fleetPlanPanel">Fleet Plan</button>
+          <button class="tab" id="assetsTab" type="button" role="tab" aria-selected="false" aria-controls="assetsPanel" data-tab="assetsPanel">Assets</button>
         </nav>
 
-        <section class="tab-panel active" id="assetsPanel" role="tabpanel" aria-labelledby="assetsTab">
+        <section class="tab-panel" id="assetsPanel" role="tabpanel" aria-labelledby="assetsTab" hidden>
           <div class="identity">
             <img class="portrait" id="portrait" alt="Character portrait">
             <div><h2 id="characterName">Capsuleer</h2><p id="characterId"></p></div>
@@ -41,6 +41,7 @@
           </div>
           <div class="tree-toolbar"><button id="toggleTree" type="button">Expand all</button></div>
           <div class="tree" id="assetTree" aria-label="Character assets"></div>
+          <div class="actions"><button id="refresh" type="button">Refresh assets</button><button id="logout" class="secondary" type="button">Disconnect</button></div>
         </section>
 
         <section class="tab-panel" id="addFitPanel" role="tabpanel" aria-labelledby="addFitTab" hidden>
@@ -52,7 +53,7 @@
             <div class="fit-input-actions"><button id="parseFit" type="button">Load EFT fit</button><button id="clearFit" class="secondary" type="button">Clear EFT</button></div>
             <div class="comparison-selects"><select id="shipSelect" disabled><option value="">Load a fit first</option></select><div id="compareEscapeField" class="compare-escape" hidden><label for="compareEscapeFit">Escape bay frigate fit</label><select id="compareEscapeFit"><option value="">Choose a saved frigate fit</option></select></div></div>
           </div>
-          <p class="fineprint">Stat-equivalent type IDs listed in <code>dupes.json</code> are treated as interchangeable.</p>
+          <p class="fineprint">Stat-equivalent modules are treated as interchangeable.</p>
           <div class="fit-message" id="fitMessage" role="status"></div>
           <div class="comparison" id="fitResults"></div>
           <button id="closeFitDiff" class="close-control" type="button" hidden>Close diff</button>
@@ -71,7 +72,7 @@
             </div>
             <div id="escapeFitField" hidden><label for="escapeFit">Escape bay frigate fit</label><select id="escapeFit"><option value="">Choose a saved frigate fit</option></select></div>
             <label for="fitShips">Ships assigned to this fit</label>
-            <select id="fitShips" multiple size="4" disabled><option value="">Load an EFT fit first</option></select>
+            <select id="fitShips" multiple size="8" disabled><option value="">Load an EFT fit first</option></select>
             <div class="extra-targets" id="extraStationTargets"></div>
             <button id="addStationTarget" class="secondary add-target" type="button" disabled>Add another station</button>
             <p class="fineprint">Use Ctrl/Cmd-click to select multiple ships. Unassigned copies are treated as entirely missing. Save a frigate with 0 copies to use it only as an escape-bay template.</p>
@@ -81,7 +82,7 @@
           </section>
         </section>
 
-        <section class="tab-panel" id="fleetPlanPanel" role="tabpanel" aria-labelledby="fleetPlanTab" hidden>
+        <section class="tab-panel active" id="fleetPlanPanel" role="tabpanel" aria-labelledby="fleetPlanTab">
           <div class="fit-heading"><div><div class="balance-label">Saved fits</div><h3>Fleet plan</h3></div></div>
           <div class="saved-fits" id="savedFits"></div>
           <div class="shared-fits" id="sharedFits"></div>
@@ -92,7 +93,6 @@
           </div>
         </section>
 
-        <div class="actions"><button id="refresh" type="button">Refresh assets</button><button id="logout" class="secondary" type="button">Disconnect</button></div>
         <div class="error" id="dashError" role="alert"></div>
         <p class="fineprint" id="updated"></p>
       </section>

@@ -10,6 +10,10 @@
     .status { color:var(--muted); font-size:12px; letter-spacing:.1em; text-transform:uppercase }
     .status::before { content:""; display:inline-block; width:7px; height:7px; margin-right:8px; border-radius:50%; background:#5d6a70 }
     .status.online::before { background:var(--cyan); box-shadow:0 0 12px var(--cyan) }
+    .status.loading { padding:10px 14px; border:1px solid rgba(83,224,255,.55); color:#e8fbff; background:rgba(21,117,140,.2); font-size:14px; font-weight:750; box-shadow:0 0 24px rgba(83,224,255,.16) }
+    .status.loading::before { width:10px; height:10px; background:var(--cyan); box-shadow:0 0 14px var(--cyan); animation:loading-pulse 1s ease-in-out infinite alternate }
+    @keyframes loading-pulse { to { opacity:.35; transform:scale(.72) } }
+    @media (prefers-reduced-motion:reduce) { .status.loading::before { animation:none } }
     main { width:min(850px,100%); min-height:calc(100vh - 155px); margin:auto; padding:56px 0 }
     .card { position:relative; padding:30px; border:1px solid var(--line); background:var(--panel); box-shadow:0 24px 80px rgba(0,0,0,.3); backdrop-filter:blur(18px) }
     .card::before,.card::after { content:""; position:absolute; width:20px; height:20px; border-color:var(--cyan) }
@@ -69,6 +73,7 @@
     textarea { resize:vertical; min-height:130px }
     textarea:focus,select:focus { border-color:var(--cyan); box-shadow:0 0 0 3px rgba(85,216,239,.1) }
     select:disabled { color:#66757b }
+    select[multiple] { min-height:232px; resize:vertical; overflow:auto }
     .fit-controls { display:grid; grid-template-columns:auto 1fr; gap:9px; align-items:start; margin-top:10px }
     .fit-controls button { width:auto; padding:11px 14px; font-size:10px }
     .fit-input-actions { display:grid; gap:7px }
@@ -105,6 +110,8 @@
     .plan-actions { display:flex; gap:8px }
     .plan-actions .secondary { color:#cdd8dc; background:transparent; border:1px solid #324249 }
     .saved-fits { display:grid; gap:9px; margin-top:14px }
+    .fleet-empty p { margin:0 0 16px }
+    .fleet-empty button { width:auto }
     .shared-fits { display:grid; gap:9px; margin-top:22px; padding-top:18px; border-top:1px solid var(--line) }
     .saved-fit { padding:13px; border:1px solid var(--line); background:rgba(255,255,255,.025) }
     .saved-fit.unassigned { border-color:#9b7430; background:rgba(232,196,107,.075); box-shadow:inset 3px 0 0 #e8c46b }

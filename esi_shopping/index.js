@@ -839,6 +839,7 @@
     $('shoppingList').value = '';
     $('shoppingPanel').hidden = !rows.some((item) => item.difference < 0);
     $('closeFitDiff').hidden = false;
+    $('closeFitDiff').textContent = 'Close diff';
 
     if (!rows.length) {
       $('fitResults').replaceChildren();
@@ -953,13 +954,19 @@
     $('shoppingList').select();
   }
 
-  function closeFitDiff() {
+  function closeFitDiff(clear = false) {
     $('fitResults').replaceChildren();
-    $('closeFitDiff').hidden = true;
+    $('closeFitDiff').hidden = clear;
+    $('closeFitDiff').textContent = clear ? 'Close diff' : 'Show diff';
     $('shoppingPanel').hidden = true;
     $('shoppingList').hidden = true;
     $('closeShopping').hidden = true;
     $('fitMessage').textContent = '';
+  }
+
+  function toggleFitDiff() {
+    if ($('closeFitDiff').textContent === 'Show diff') compareSelectedShip();
+    else closeFitDiff();
   }
 
   function closeShoppingList() {
@@ -980,7 +987,7 @@
     populateShipSelect();
     updateFitPlannerControls();
     $('fitStation').selectedIndex = -1;
-    closeFitDiff();
+    closeFitDiff(true);
   }
 
   function cancelAndClearPlanEdit() {
@@ -1027,7 +1034,10 @@
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = 'Remove';
-    remove.addEventListener('click', () => row.remove());
+    remove.addEventListener('click', () => {
+      row.remove();
+      validateStationTargetAssignments();
+    });
     head.append(title, remove);
     const fields = document.createElement('div');
     fields.className = 'plan-fields';
@@ -1063,7 +1073,7 @@
     const ships = document.createElement('select');
     ships.className = 'target-ships';
     ships.multiple = true;
-    ships.size = 4;
+    ships.size = 8;
     if (currentFit) {
       ownedShipsForFit(currentFit).forEach(({ node, locationName }) =>
         ships.append(new Option(`${node.name} — ${locationName} (#${node.item_id})`, String(node.item_id))),
@@ -1073,6 +1083,7 @@
     [...ships.options].forEach((option) => {
       option.selected = selectedIds.includes(option.value);
     });
+    ships.addEventListener('change', validateStationTargetAssignments);
     row.append(head, fields, shipsLabel, ships);
     $('extraStationTargets').append(row);
   }
@@ -1099,6 +1110,31 @@
       });
     });
     return targets;
+  }
+
+  function validateStationTargetAssignments() {
+    const shipIds = collectStationTargets().flatMap((target) => target.shipIds);
+    const seen = new Set();
+    const duplicateId = shipIds.find((id) => {
+      if (seen.has(id)) return true;
+      seen.add(id);
+      return false;
+    });
+    if (duplicateId) {
+      const ship = findAssetNode(duplicateId);
+      $('planMessage').classList.add('bad');
+      $('planMessage').textContent = `${ship?.name || `Ship #${duplicateId}`} cannot be assigned to multiple stations.`;
+      $('saveFit').disabled = true;
+      return false;
+    }
+    $('saveFit').disabled = !currentFit || !assetGroups.length;
+    if ($('planMessage').classList.contains('bad')) {
+      $('planMessage').classList.remove('bad');
+      $('planMessage').textContent = editingPlanId
+        ? `Editing ${currentFit?.name || 'saved fit'}.`
+        : '';
+    }
+    return true;
   }
 
   function updateFitPlannerControls() {
@@ -1176,6 +1212,18 @@
     const root = $('savedFits');
     root.replaceChildren();
     const characterPlans = activeCharacterPlans();
+    if (!characterPlans.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty fleet-empty';
+      const message = document.createElement('p');
+      message.textContent = 'There are no fits in this character’s fleet plan.';
+      const addFit = document.createElement('button');
+      addFit.type = 'button';
+      addFit.textContent = 'Add a fit';
+      addFit.addEventListener('click', () => activateTab('addFitPanel'));
+      empty.append(message, addFit);
+      root.append(empty);
+    }
     characterPlans.forEach((plan) => {
       const card = document.createElement('article');
       card.className = 'saved-fit';
@@ -1568,7 +1616,7 @@
       });
       const shipIds = targets.flatMap((target) => target.shipIds);
       if (new Set(shipIds).size !== shipIds.length)
-        throw new Error('A ship cannot be assigned to more than one station target.');
+        throw new Error('A ship cannot be assigned to multiple stations.');
       const duplicateAssignment = activeCharacterPlans().find(
         (plan) =>
           plan.id !== editingPlanId &&
@@ -1621,10 +1669,10 @@
       } else savedFitPlans.push(savedPlan);
       persistFitPlans();
       renderSavedFitPlans();
-      updateFitPlannerControls();
-      const action = editingPlanId ? 'Updated' : 'Saved';
-      cancelPlanEdit();
-      $('planMessage').textContent = `${action} ${currentFit.name}.`;
+      cancelPlanEdit('');
+      clearFitInput();
+      $('planMessage').textContent = '';
+      activateTab('fleetPlanPanel');
     } catch (error) {
       $('planMessage').classList.add('bad');
       $('planMessage').textContent = error.message || String(error);
@@ -1731,7 +1779,11 @@
   async function loadAssets() {
     clearError();
     $('refresh').disabled = true;
+    $('login').disabled = true;
+    $('addCharacter').disabled = true;
     $('status').textContent = 'Loading assets';
+    $('status').classList.remove('online');
+    $('status').classList.add('loading');
     try {
       const token = await accessToken();
       const claims = decodeJwt(token);
@@ -1773,9 +1825,12 @@
       $('setup').style.display = 'none';
       $('dashboard').style.display = 'block';
       $('status').textContent = 'Connected';
+      $('status').classList.remove('loading');
       $('status').classList.add('online');
     } catch (error) {
       const message = error.message || String(error);
+      $('status').textContent = 'Asset load failed';
+      $('status').classList.remove('online');
       if ($('dashboard').style.display === 'block') showError(message, true);
       else {
         logout();
@@ -1783,6 +1838,9 @@
       }
     } finally {
       $('refresh').disabled = false;
+      $('login').disabled = false;
+      $('addCharacter').disabled = false;
+      $('status').classList.remove('loading');
     }
   }
 
@@ -1808,7 +1866,7 @@
     $('dashboard').style.display = 'none';
     $('setup').style.display = 'block';
     $('status').textContent = 'Disconnected';
-    $('status').classList.remove('online');
+    $('status').classList.remove('online', 'loading');
   }
 
   $('login').addEventListener('click', beginLogin);
@@ -1836,7 +1894,7 @@
     selectComparedShipForPlan();
   });
   $('generateShopping').addEventListener('click', generateShoppingList);
-  $('closeFitDiff').addEventListener('click', closeFitDiff);
+  $('closeFitDiff').addEventListener('click', toggleFitDiff);
   $('closeShopping').addEventListener('click', closeShoppingList);
   $('escapeFit').addEventListener('change', () => {
     if (!currentFit) return;
@@ -1851,6 +1909,7 @@
     compareSelectedShip();
   });
   $('saveFit').addEventListener('click', saveCurrentFitPlan);
+  $('fitShips').addEventListener('change', validateStationTargetAssignments);
   $('addStationTarget').addEventListener('click', () =>
     addStationTargetEditor(),
   );
@@ -1867,7 +1926,7 @@
   });
 
   (async () => {
-    activateTab('assetsPanel');
+    activateTab('fleetPlanPanel');
     try {
       await hydrateSavedPlanClasses();
     } catch (_) {
