@@ -1232,8 +1232,6 @@
       const text = document.createElement('div');
       const title = document.createElement('h4');
       title.textContent = `${plan.name} · ${plan.hull}`;
-      const source = document.createElement('p');
-      source.textContent = `Shared by ${plan.characterName || 'another character'}`;
       const detail = document.createElement('p');
       const targets = targetsForPlan(plan);
       const assigned = targets.reduce((total, target) => total + (target.shipIds?.length || 0), 0);
@@ -1383,7 +1381,7 @@
         persistFitPlans();
         renderSavedFitPlans();
       });
-      card.append(title, source, use);
+      card.append(title, use);
       root.append(card);
     });
   }

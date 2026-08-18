@@ -26,7 +26,7 @@
     input:focus { border-color:var(--cyan); box-shadow:0 0 0 3px rgba(85,216,239,.1) }
     button { width:100%; border:0; padding:15px 20px; cursor:pointer; color:#061015; background:linear-gradient(90deg,var(--cyan),#88eafa); font-weight:800; letter-spacing:.08em; text-transform:uppercase; transition:.18s transform,.18s filter }
     button:hover { filter:brightness(1.08); transform:translateY(-1px) }
-    button:disabled { cursor:wait; filter:saturate(.3); transform:none }
+    button:disabled { cursor:not-allowed; filter:saturate(.3); transform:none }
     .error { display:none; margin-top:16px; color:#ff9aa0; font-size:13px }
     .error.show { display:block }
     .dashboard { display:none }
