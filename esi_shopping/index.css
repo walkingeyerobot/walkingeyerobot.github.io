@@ -134,4 +134,24 @@
     .saved-fit-diff tr.match td:last-child { color:var(--cyan) }
     .fleet-shopping { margin-top:16px }
     .fleet-shopping textarea { margin-top:10px; min-height:160px }
+    .shopping-character-field { margin:18px 0 }
+    .field-label { margin-bottom:8px; color:#c9d2d6; font-size:12px; font-weight:650; letter-spacing:.08em; text-transform:uppercase }
+    .portrait-multiselect { max-height:260px; min-height:130px; overflow:auto; border:1px solid #2b3a40; border-radius:2px; padding:5px; background:#091216 }
+    .portrait-option { display:flex; align-items:center; gap:11px; padding:7px; border:1px solid transparent; color:var(--ink); cursor:pointer; user-select:none }
+    .portrait-option:hover,.portrait-option:focus { outline:none; background:rgba(255,255,255,.045); border-color:#324249 }
+    .portrait-option[aria-selected="true"] { color:#061015; background:linear-gradient(90deg,var(--cyan),#88eafa); border-color:var(--cyan) }
+    .portrait-option img { width:48px; height:48px; flex:0 0 auto; object-fit:cover; border-radius:2px; background:#142127 }
+    .portrait-option span { min-width:0; overflow:hidden; font-weight:700; text-overflow:ellipsis; white-space:nowrap }
+    .portrait-multiselect .empty { min-height:118px; display:grid; place-items:center; padding:15px }
+    .shopping-station-field { margin:18px 0 }
+    .station-multiselect { max-height:260px; min-height:150px; overflow:auto; border:1px solid #2b3a40; border-radius:2px; padding:5px; background:#091216 }
+    .station-option { display:flex; align-items:center; gap:11px; padding:7px; border:1px solid transparent; color:var(--ink); cursor:pointer; user-select:none }
+    .station-option:hover,.station-option:focus { outline:none; background:rgba(255,255,255,.045); border-color:#324249 }
+    .station-option[aria-selected="true"] { color:#061015; background:linear-gradient(90deg,var(--cyan),#88eafa); border-color:var(--cyan) }
+    .station-option img,.station-icon-fallback { width:40px; height:40px; flex:0 0 auto; border-radius:2px; background:#142127 }
+    .station-option img { object-fit:contain }
+    .station-icon-fallback { display:grid; place-items:center; color:var(--cyan); font-size:21px }
+    .station-option[aria-selected="true"] .station-icon-fallback { color:#061015; background:rgba(6,16,21,.12) }
+    .station-option span:last-child { min-width:0; overflow:hidden; font-weight:700; text-overflow:ellipsis; white-space:nowrap }
+    .station-multiselect .empty { min-height:138px; display:grid; place-items:center; padding:15px }
     @media (max-width:780px) { main{padding-top:42px}.shell{width:min(100% - 28px,850px)} }

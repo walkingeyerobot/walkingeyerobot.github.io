@@ -21,6 +21,8 @@
   let characterSessions = loadCharacterSessions();
   let activeCharacterId = sessionStorage.getItem('eve_active_character') || '';
   const hullClassCache = new Map();
+  const stationTypeIdPromiseCache = new Map();
+  const assetGroupsByCharacterCache = new Map();
   const $ = (id) => document.getElementById(id);
   const redirectUri = location.origin + location.pathname;
 
@@ -172,6 +174,46 @@
       throw new Error(`Could not refresh login: ${await apiError(response)}`);
     const tokens = await response.json();
     saveTokens(tokens);
+    return tokens.access_token;
+  }
+
+  async function accessTokenForCharacter(characterId) {
+    const id = String(characterId);
+    const session = characterSessions[id];
+    if (!session)
+      throw new Error(
+        `${savedFitPlans.find((plan) => String(plan.characterId) === id)?.characterName || `Character ${id}`} must be connected again.`,
+      );
+    if (session.accessToken && Date.now() < Number(session.expiresAt))
+      return session.accessToken;
+    if (!session.refreshToken)
+      throw new Error(`${session.name || `Character ${id}`} must be connected again.`);
+    const response = await fetch(TOKEN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: session.refreshToken,
+        client_id: CLIENT_ID,
+      }),
+    });
+    if (!response.ok)
+      throw new Error(
+        `Could not refresh ${session.name || `Character ${id}`}: ${await apiError(response)}`,
+      );
+    const tokens = await response.json();
+    const claims = decodeJwt(tokens.access_token);
+    const refreshedId = validateClaims(claims);
+    if (String(refreshedId) !== id)
+      throw new Error('The refreshed character did not match the selected character.');
+    characterSessions[id] = {
+      ...session,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || session.refreshToken,
+      expiresAt: Date.now() + (tokens.expires_in - 30) * 1000,
+      name: claims.name || session.name,
+    };
+    persistCharacterSessions();
     return tokens.access_token;
   }
 
@@ -574,14 +616,47 @@
     persistFitPlans();
   }
 
-  function findAssetNode(itemId) {
+  function findAssetNodeInGroups(groups, itemId) {
     let found;
     const visit = (node) => {
       if (String(node.item_id) === String(itemId)) found = node;
       else if (!found) node.children.forEach(visit);
     };
-    assetGroups.forEach((group) => group.children.forEach(visit));
+    groups.forEach((group) => group.children.forEach(visit));
     return found;
+  }
+
+  function findAssetNode(itemId) {
+    return findAssetNodeInGroups(assetGroups, itemId);
+  }
+
+  async function loadAssetGroupsForCharacter(characterId) {
+    const id = String(characterId);
+    if (assetGroupsByCharacterCache.has(id))
+      return assetGroupsByCharacterCache.get(id);
+    if (id === String(activeCharacterId) && assetGroups.length) {
+      assetGroupsByCharacterCache.set(id, assetGroups);
+      return assetGroups;
+    }
+    const token = await accessTokenForCharacter(id);
+    const assets = await fetchAllAssets(id, token);
+    const typeNames = await resolveNames(assets.map((asset) => asset.type_id));
+    const assetIds = new Set(assets.map((asset) => String(asset.item_id)));
+    const rootLocationIds = assets
+      .filter((asset) => !assetIds.has(String(asset.location_id)))
+      .map((asset) => asset.location_id);
+    const [locationNames, customNames] = await Promise.all([
+      resolveLocationNames(rootLocationIds, token),
+      resolveCustomNames(id, token, assets),
+    ]);
+    const groups = buildAssetTree(
+      assets,
+      typeNames,
+      locationNames,
+      customNames,
+    );
+    assetGroupsByCharacterCache.set(id, groups);
+    return groups;
   }
 
   function findAssetGroupForItem(itemId) {
@@ -1327,12 +1402,189 @@
       }
       root.append(card);
     });
-    $('fleetShoppingPanel').hidden = !characterPlans.length;
-    $('fleetShoppingEmpty').hidden = Boolean(characterPlans.length);
+    const hasFleetPlans = savedFitPlans.some((plan) => plan.characterId);
+    $('fleetShoppingPanel').hidden = !hasFleetPlans;
+    $('fleetShoppingEmpty').hidden = hasFleetPlans;
     $('fleetShoppingList').hidden = true;
     $('closeFleetShopping').hidden = true;
     $('fleetShoppingMessage').textContent = '';
+    renderFleetShoppingCharacters();
     renderSharedFits();
+  }
+
+  function renderFleetShoppingCharacters() {
+    const listbox = $('fleetShoppingCharacters');
+    const previousSelection = new Set(
+      [...listbox.querySelectorAll('.portrait-option[aria-selected="true"]')]
+        .map((option) => option.dataset.characterId),
+    );
+    const characters = new Map();
+    savedFitPlans.forEach((plan) => {
+      const characterId = String(plan.characterId || '');
+      if (!characterId) return;
+      characters.set(
+        characterId,
+        characterSessions[characterId]?.name ||
+          plan.characterName ||
+          `Character ${characterId}`,
+      );
+    });
+    listbox.replaceChildren();
+    [...characters.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .forEach(([characterId, name]) => {
+        const option = document.createElement('div');
+        option.className = 'portrait-option';
+        option.setAttribute('role', 'option');
+        option.setAttribute(
+          'aria-selected',
+          String(previousSelection.has(characterId)),
+        );
+        option.tabIndex = 0;
+        option.dataset.characterId = characterId;
+        const portrait = document.createElement('img');
+        portrait.src =
+          `https://images.evetech.net/characters/${characterId}/portrait?size=64`;
+        portrait.alt = '';
+        portrait.loading = 'lazy';
+        const label = document.createElement('span');
+        label.textContent = name;
+        const toggle = () => {
+          option.setAttribute(
+            'aria-selected',
+            String(option.getAttribute('aria-selected') !== 'true'),
+          );
+          renderFleetShoppingStations();
+          closeFleetShoppingList();
+        };
+        option.addEventListener('click', toggle);
+        option.addEventListener('keydown', (event) => {
+          if (event.key !== ' ' && event.key !== 'Enter') return;
+          event.preventDefault();
+          toggle();
+        });
+        option.append(portrait, label);
+        listbox.append(option);
+      });
+    if (!characters.size) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No characters have fleet plans';
+      listbox.append(empty);
+    }
+    renderFleetShoppingStations();
+  }
+
+  function renderFleetShoppingStations() {
+    const listbox = $('fleetShoppingStations');
+    const previousSelection = new Set(
+      [...listbox.querySelectorAll('.station-option[aria-selected="true"]')]
+        .map((option) => option.dataset.stationId),
+    );
+    const selectedCharacters = new Set(
+      [
+        ...$('fleetShoppingCharacters').querySelectorAll(
+          '.portrait-option[aria-selected="true"]',
+        ),
+      ].map((option) => option.dataset.characterId),
+    );
+    const stations = new Map();
+    savedFitPlans
+      .filter((plan) => selectedCharacters.has(String(plan.characterId || '')))
+      .forEach((plan) =>
+        targetsForPlan(plan).forEach((target) => {
+          const stationId = String(target.stationId || '');
+          if (!stationId) return;
+          stations.set(
+            stationId,
+            target.stationName || `Hangar #${stationId}`,
+          );
+        }),
+      );
+    listbox.replaceChildren();
+    [...stations.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .forEach(([stationId, name]) => {
+        const option = document.createElement('div');
+        option.className = 'station-option';
+        option.setAttribute('role', 'option');
+        option.setAttribute(
+          'aria-selected',
+          String(previousSelection.has(stationId)),
+        );
+        option.tabIndex = 0;
+        option.dataset.stationId = stationId;
+        const icon = document.createElement('span');
+        icon.className = 'station-icon-fallback';
+        icon.textContent = '⌂';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.textContent = name;
+        const toggle = () => {
+          option.setAttribute(
+            'aria-selected',
+            String(option.getAttribute('aria-selected') !== 'true'),
+          );
+          closeFleetShoppingList();
+        };
+        option.addEventListener('click', toggle);
+        option.addEventListener('keydown', (event) => {
+          if (event.key !== ' ' && event.key !== 'Enter') return;
+          event.preventDefault();
+          toggle();
+        });
+        option.append(icon, label);
+        listbox.append(option);
+        void resolveStationTypeId(stationId).then((typeId) => {
+          if (!typeId || !option.isConnected) return;
+          const image = document.createElement('img');
+          image.src = `https://images.evetech.net/types/${typeId}/icon?size=64`;
+          image.alt = '';
+          image.loading = 'lazy';
+          image.addEventListener('error', () => {
+            if (image.isConnected) image.replaceWith(icon);
+          });
+          icon.replaceWith(image);
+        });
+      });
+    if (!stations.size) {
+      const message = selectedCharacters.size
+        ? 'Selected characters have no fleet-plan stations'
+        : 'Select one or more characters first';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = message;
+      listbox.append(empty);
+    }
+  }
+
+  function resolveStationTypeId(stationId) {
+    const id = String(stationId);
+    if (!stationTypeIdPromiseCache.has(id)) {
+      stationTypeIdPromiseCache.set(
+        id,
+        (async () => {
+          try {
+            const numericId = Number(id);
+            let url;
+            const options = {};
+            if (numericId >= 60000000 && numericId < 64000000) {
+              url = `https://esi.evetech.net/universe/stations/${id}/`;
+            } else if (numericId > 1000000000000) {
+              url = `https://esi.evetech.net/universe/structures/${id}/`;
+              options.headers = {
+                Authorization: `Bearer ${await accessToken()}`,
+              };
+            } else return null;
+            const result = await esiJson(url, options);
+            return result.data.type_id || null;
+          } catch (_) {
+            return null;
+          }
+        })(),
+      );
+    }
+    return stationTypeIdPromiseCache.get(id);
   }
 
   function renderSharedFits() {
@@ -1680,12 +1932,55 @@
   }
 
   async function generateFleetShoppingList() {
+    const generateButton = $('generateFleetShopping');
     $('fleetShoppingMessage').classList.remove('bad');
-    $('fleetShoppingMessage').textContent = '';
+    $('fleetShoppingMessage').textContent = 'Loading selected characters’ assets…';
+    generateButton.disabled = true;
     try {
-      const characterPlans = activeCharacterPlans();
+      const selectedCharacters = new Set(
+        [
+          ...$('fleetShoppingCharacters').querySelectorAll(
+            '.portrait-option[aria-selected="true"]',
+          ),
+        ].map((option) => option.dataset.characterId),
+      );
+      const selectedStations = new Set(
+        [
+          ...$('fleetShoppingStations').querySelectorAll(
+            '.station-option[aria-selected="true"]',
+          ),
+        ].map((option) => option.dataset.stationId),
+      );
+      if (!selectedCharacters.size)
+        throw new Error('Select at least one character.');
+      if (!selectedStations.size)
+        throw new Error('Select at least one station.');
+      const characterPlans = savedFitPlans
+        .filter((plan) =>
+          selectedCharacters.has(String(plan.characterId || '')),
+        )
+        .map((plan) => ({
+          plan,
+          targets: targetsForPlan(plan).filter((target) =>
+            selectedStations.has(String(target.stationId)),
+          ),
+        }))
+        .filter(({ targets }) => targets.length);
       if (!characterPlans.length)
-        throw new Error('Save at least one fit plan first.');
+        throw new Error(
+          'No fleet-plan fits match the selected characters and stations.',
+        );
+      const characterIds = [
+        ...new Set(characterPlans.map(({ plan }) => String(plan.characterId))),
+      ];
+      const assetsByCharacter = new Map(
+        await Promise.all(
+          characterIds.map(async (characterId) => [
+            characterId,
+            await loadAssetGroupsForCharacter(characterId),
+          ]),
+        ),
+      );
       const canonicalById = await duplicateTypeGroups();
       const keyFor = (typeId, name) => {
         if (typeId != null) {
@@ -1703,21 +1998,24 @@
         inventory.set(key, entry);
       };
 
-      for (const plan of characterPlans) {
+      for (const { plan, targets } of characterPlans) {
         const escapeFit = plan.isBattleship
           ? savedFitPlans.find((candidate) => candidate.id === plan.escapeFitPlanId)
           : null;
         if (plan.isBattleship && !escapeFit)
           throw new Error(`${plan.name} needs an escape bay frigate fit.`);
-        for (const target of targetsForPlan(plan)) {
-          if (!stations.has(target.stationId))
-            stations.set(target.stationId, {
+        const characterId = String(plan.characterId);
+        const characterAssets = assetsByCharacter.get(characterId) || [];
+        for (const target of targets) {
+          const stationId = String(target.stationId);
+          if (!stations.has(stationId))
+            stations.set(stationId, {
               name: target.stationName,
               items: new Map(),
             });
-          const inventory = stations.get(target.stationId).items;
+          const inventory = stations.get(stationId).items;
           const assignedShips = (target.shipIds || [])
-            .map((shipId) => findAssetNode(shipId))
+            .map((shipId) => findAssetNodeInGroups(characterAssets, shipId))
             .filter(Boolean);
           const effectiveCopies = Math.max(target.copies, assignedShips.length);
           adjust(inventory, plan.hullTypeId, plan.hull, effectiveCopies);
@@ -1737,9 +2035,10 @@
           }
           for (const ship of assignedShips) {
             const shipId = String(ship.item_id);
-            if (usedShips.has(shipId))
+            const assignmentKey = `${characterId}:${shipId}`;
+            if (usedShips.has(assignmentKey))
               throw new Error(`Ship #${shipId} is assigned to more than one saved fit.`);
-            usedShips.add(shipId);
+            usedShips.add(assignmentKey);
             adjust(inventory, ship.type_id, ship.typeName, -1);
             const subtractContents = (item) => {
               adjust(inventory, item.type_id, item.typeName, -item.quantity);
@@ -1764,11 +2063,14 @@
         sections.join('\n\n') || 'No items needed.';
       $('fleetShoppingList').hidden = false;
       $('closeFleetShopping').hidden = false;
+      $('fleetShoppingMessage').textContent = '';
       $('fleetShoppingList').focus();
       $('fleetShoppingList').select();
     } catch (error) {
       $('fleetShoppingMessage').classList.add('bad');
       $('fleetShoppingMessage').textContent = error.message || String(error);
+    } finally {
+      generateButton.disabled = false;
     }
   }
 
@@ -1812,6 +2114,7 @@
         locationNames,
         customNames,
       );
+      assetGroupsByCharacterCache.set(String(id), assetGroups);
       if (currentFit) populateShipSelect();
       updateFitPlannerControls();
       renderSavedFitPlans();
@@ -1854,7 +2157,10 @@
       'eve_pkce_verifier',
       'eve_oauth_state',
     ].forEach((k) => sessionStorage.removeItem(k));
-    if (activeCharacterId) delete characterSessions[activeCharacterId];
+    if (activeCharacterId) {
+      delete characterSessions[activeCharacterId];
+      assetGroupsByCharacterCache.delete(String(activeCharacterId));
+    }
     activeCharacterId = Object.keys(characterSessions)[0] || '';
     persistCharacterSessions();
     history.replaceState({}, document.title, redirectUri);

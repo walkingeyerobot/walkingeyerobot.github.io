@@ -91,6 +91,8 @@
 
         <section class="tab-panel" id="fleetShoppingTabPanel" role="tabpanel" aria-labelledby="fleetShoppingTab" hidden>
           <div class="fit-heading"><div><div class="balance-label">Fleet requirements</div><h3>Fleet shopping list</h3></div></div>
+          <div class="shopping-character-field"><div class="field-label" id="fleetShoppingCharactersLabel">Characters with fleet plans</div><div class="portrait-multiselect" id="fleetShoppingCharacters" role="listbox" aria-multiselectable="true" aria-labelledby="fleetShoppingCharactersLabel" aria-describedby="fleetShoppingCharactersHint"></div><p class="fineprint" id="fleetShoppingCharactersHint">Select the characters to include in the shopping list.</p></div>
+          <div class="shopping-station-field"><div class="field-label" id="fleetShoppingStationsLabel">Stations in selected fleet plans</div><div class="station-multiselect" id="fleetShoppingStations" role="listbox" aria-multiselectable="true" aria-labelledby="fleetShoppingStationsLabel" aria-describedby="fleetShoppingStationsHint"></div><p class="fineprint" id="fleetShoppingStationsHint">Select the destination stations to include.</p></div>
           <div class="empty" id="fleetShoppingEmpty" hidden>Add a fit to the fleet plan before generating a shopping list.</div>
           <div class="fleet-shopping" id="fleetShoppingPanel" hidden>
             <button id="generateFleetShopping" type="button">Generate fleet shopping list</button>
