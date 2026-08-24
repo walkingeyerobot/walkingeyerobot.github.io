@@ -32,7 +32,7 @@
     .dashboard { display:none }
     .character-controls { display:grid; grid-template-columns:1fr auto; gap:8px; margin-bottom:14px }
     .character-controls button { width:auto; padding:11px 14px; font-size:10px }
-    .tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; margin:-10px -10px 28px; padding:4px; border:1px solid var(--line); background:rgba(4,10,13,.55) }
+    .tabs { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin:-10px -10px 28px; padding:4px; border:1px solid var(--line); background:rgba(4,10,13,.55) }
     .tabs .tab { padding:11px 10px; color:var(--muted); background:transparent; font-size:10px; transform:none }
     .tabs .tab:hover { color:var(--ink); background:rgba(255,255,255,.04) }
     .tabs .tab.active { color:#061015; background:linear-gradient(90deg,var(--cyan),#88eafa) }

@@ -28,6 +28,7 @@
           <button class="tab active" id="fleetPlanTab" type="button" role="tab" aria-selected="true" aria-controls="fleetPlanPanel" data-tab="fleetPlanPanel">Fleet Plan</button>
           <button class="tab" id="addFitTab" type="button" role="tab" aria-selected="false" aria-controls="addFitPanel" data-tab="addFitPanel">Add Fit</button>
           <button class="tab" id="assetsTab" type="button" role="tab" aria-selected="false" aria-controls="assetsPanel" data-tab="assetsPanel">Assets</button>
+          <button class="tab" id="fleetShoppingTab" type="button" role="tab" aria-selected="false" aria-controls="fleetShoppingTabPanel" data-tab="fleetShoppingTabPanel">Shopping List</button>
         </nav>
 
         <section class="tab-panel" id="assetsPanel" role="tabpanel" aria-labelledby="assetsTab" hidden>
@@ -86,9 +87,15 @@
           <div class="fit-heading"><div><div class="balance-label">Saved fits</div><h3>Fleet plan</h3></div></div>
           <div class="saved-fits" id="savedFits"></div>
           <div class="shared-fits" id="sharedFits"></div>
+        </section>
+
+        <section class="tab-panel" id="fleetShoppingTabPanel" role="tabpanel" aria-labelledby="fleetShoppingTab" hidden>
+          <div class="fit-heading"><div><div class="balance-label">Fleet requirements</div><h3>Fleet shopping list</h3></div></div>
+          <div class="empty" id="fleetShoppingEmpty" hidden>Add a fit to the fleet plan before generating a shopping list.</div>
           <div class="fleet-shopping" id="fleetShoppingPanel" hidden>
             <button id="generateFleetShopping" type="button">Generate fleet shopping list</button>
             <button id="closeFleetShopping" class="secondary" type="button" hidden>Close shopping list</button>
+            <div class="fit-message" id="fleetShoppingMessage" role="status"></div>
             <textarea id="fleetShoppingList" rows="10" readonly hidden aria-label="Fleet shopping list"></textarea>
           </div>
         </section>

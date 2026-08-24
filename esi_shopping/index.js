@@ -1328,8 +1328,10 @@
       root.append(card);
     });
     $('fleetShoppingPanel').hidden = !characterPlans.length;
+    $('fleetShoppingEmpty').hidden = Boolean(characterPlans.length);
     $('fleetShoppingList').hidden = true;
     $('closeFleetShopping').hidden = true;
+    $('fleetShoppingMessage').textContent = '';
     renderSharedFits();
   }
 
@@ -1678,7 +1680,8 @@
   }
 
   async function generateFleetShoppingList() {
-    $('planMessage').classList.remove('bad');
+    $('fleetShoppingMessage').classList.remove('bad');
+    $('fleetShoppingMessage').textContent = '';
     try {
       const characterPlans = activeCharacterPlans();
       if (!characterPlans.length)
@@ -1764,14 +1767,15 @@
       $('fleetShoppingList').focus();
       $('fleetShoppingList').select();
     } catch (error) {
-      $('planMessage').classList.add('bad');
-      $('planMessage').textContent = error.message || String(error);
+      $('fleetShoppingMessage').classList.add('bad');
+      $('fleetShoppingMessage').textContent = error.message || String(error);
     }
   }
 
   function closeFleetShoppingList() {
     $('fleetShoppingList').hidden = true;
     $('closeFleetShopping').hidden = true;
+    $('fleetShoppingMessage').textContent = '';
   }
 
   async function loadAssets() {
