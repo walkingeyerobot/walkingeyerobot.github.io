@@ -7,6 +7,7 @@
   const SCOPES = [
     'esi-assets.read_assets.v1',
     'esi-universe.read_structures.v1',
+    'esi-fittings.read_fittings.v1',
   ];
   let assetGroups = [];
   let treeExpanded = false;
@@ -23,6 +24,8 @@
   const hullClassCache = new Map();
   const stationTypeIdPromiseCache = new Map();
   const assetGroupsByCharacterCache = new Map();
+  const inGameFittingsPromiseByCharacter = new Map();
+  let inGameFitsRenderId = 0;
   const $ = (id) => document.getElementById(id);
   const redirectUri = location.origin + location.pathname;
 
@@ -270,6 +273,23 @@
       ),
     );
     return first.data.concat(...rest);
+  }
+
+  function fetchInGameFittings(characterId, token) {
+    const id = String(characterId);
+    if (!inGameFittingsPromiseByCharacter.has(id)) {
+      const request = esiJson(
+        `https://esi.evetech.net/characters/${id}/fittings/`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+        .then((result) => result.data)
+        .catch((error) => {
+          inGameFittingsPromiseByCharacter.delete(id);
+          throw error;
+        });
+      inGameFittingsPromiseByCharacter.set(id, request);
+    }
+    return inGameFittingsPromiseByCharacter.get(id);
   }
 
   async function resolveNames(ids) {
@@ -1283,6 +1303,29 @@
     if (group) $('fitStation').value = group.id;
   }
 
+  function createFitShipIcon(typeId, hull) {
+    const frame = document.createElement('div');
+    frame.className = 'fit-ship-icon';
+    const fallback = () => {
+      frame.replaceChildren();
+      frame.textContent = '🚀';
+      frame.setAttribute('aria-label', `${hull || 'Ship'} icon unavailable`);
+    };
+    const numericTypeId = Number(typeId);
+    if (!numericTypeId) {
+      fallback();
+      return frame;
+    }
+    const image = document.createElement('img');
+    image.src =
+      `https://images.evetech.net/types/${numericTypeId}/icon?size=64`;
+    image.alt = `${hull || 'Ship'} icon`;
+    image.loading = 'lazy';
+    image.addEventListener('error', fallback, { once: true });
+    frame.append(image);
+    return frame;
+  }
+
   function renderSavedFitPlans() {
     const root = $('savedFits');
     root.replaceChildren();
@@ -1304,6 +1347,8 @@
       card.className = 'saved-fit';
       const head = document.createElement('div');
       head.className = 'saved-fit-head';
+      const identity = document.createElement('div');
+      identity.className = 'fit-identity';
       const text = document.createElement('div');
       const title = document.createElement('h4');
       title.textContent = `${plan.name} · ${plan.hull}`;
@@ -1373,7 +1418,8 @@
         updateFitPlannerControls();
       });
       actions.append(showDiff, edit, remove);
-      head.append(text, actions);
+      identity.append(createFitShipIcon(plan.hullTypeId, plan.hull), text);
+      head.append(identity, actions);
       card.append(head);
       if (plan.isBattleship) {
         const label = document.createElement('label');
@@ -1410,6 +1456,7 @@
     $('fleetShoppingMessage').textContent = '';
     renderFleetShoppingCharacters();
     renderSharedFits();
+    void renderInGameFits();
   }
 
   function renderFleetShoppingCharacters() {
@@ -1603,13 +1650,21 @@
       return true;
     });
     if (!shared.length) return;
-    const heading = document.createElement('div');
-    heading.className = 'balance-label';
+    const section = document.createElement('details');
+    section.className = 'template-library';
+    const heading = document.createElement('summary');
     heading.textContent = 'Fits shared by other characters';
-    root.append(heading);
+    const contents = document.createElement('div');
+    contents.className = 'template-library-contents';
+    section.append(heading, contents);
+    root.append(section);
     shared.forEach((plan) => {
       const card = document.createElement('article');
       card.className = 'saved-fit';
+      const head = document.createElement('div');
+      head.className = 'saved-fit-head';
+      const identity = document.createElement('div');
+      identity.className = 'fit-identity';
       const title = document.createElement('h4');
       title.textContent = `${plan.name} · ${plan.hull}`;
       const use = document.createElement('button');
@@ -1635,9 +1690,238 @@
         persistFitPlans();
         renderSavedFitPlans();
       });
-      card.append(title, use);
-      root.append(card);
+      identity.append(createFitShipIcon(plan.hullTypeId, plan.hull), title);
+      head.append(identity, use);
+      card.append(head);
+      contents.append(card);
     });
+  }
+
+  function textFromHtml(value) {
+    const source = String(value || '')
+      .replace(/<br\b[^>]*>/gi, ' ')
+      .replace(/<\/(?:p|div|li|tr|h[1-6])\s*>/gi, ' ');
+    const documentFragment = new DOMParser().parseFromString(
+      source,
+      'text/html',
+    );
+    documentFragment
+      .querySelectorAll('script, style, template, noscript')
+      .forEach((element) => element.remove());
+    return (documentFragment.body.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async function renderInGameFits() {
+    const root = $('inGameFits');
+    const renderId = ++inGameFitsRenderId;
+    const targetCharacterId = String(activeCharacterId || '');
+    root.replaceChildren();
+    if (!targetCharacterId || !characterSessions[targetCharacterId]) return;
+
+    const section = document.createElement('details');
+    section.className = 'template-library';
+    const heading = document.createElement('summary');
+    heading.textContent = 'Fittings saved in EVE Online';
+    const contents = document.createElement('div');
+    contents.className = 'template-library-contents';
+    const status = document.createElement('p');
+    status.textContent = 'Loading in-game fittings from connected characters…';
+    contents.append(status);
+    section.append(heading, contents);
+    root.append(section);
+    try {
+      const results = await Promise.all(
+        Object.entries(characterSessions).map(async ([sourceCharacterId, session]) => {
+          try {
+            const token = await accessTokenForCharacter(sourceCharacterId);
+            const claims = decodeJwt(token);
+            const claimScopes = claims.scp || claims.scope || [];
+            const tokenScopes = Array.isArray(claimScopes)
+              ? claimScopes
+              : String(claimScopes).split(' ').filter(Boolean);
+            if (!tokenScopes.includes('esi-fittings.read_fittings.v1')) {
+              return {
+                sourceCharacterId,
+                sourceCharacterName:
+                  session.name || `Character ${sourceCharacterId}`,
+                needsAuthorization: true,
+                fittings: [],
+              };
+            }
+            return {
+              sourceCharacterId,
+              sourceCharacterName:
+                session.name || `Character ${sourceCharacterId}`,
+              fittings: await fetchInGameFittings(sourceCharacterId, token),
+            };
+          } catch (error) {
+            return {
+              sourceCharacterId,
+              sourceCharacterName:
+                session.name || `Character ${sourceCharacterId}`,
+              error,
+              fittings: [],
+            };
+          }
+        }),
+      );
+      const typeIds = results.flatMap((result) =>
+        result.fittings.flatMap((fit) => [
+          fit.ship_type_id,
+          ...(fit.items || []).map((item) => item.type_id),
+        ]),
+      );
+      const names = await resolveNames(typeIds);
+      const normalized = await Promise.all(
+        results.flatMap((result) => result.fittings.map((fit) => ({
+          fit,
+          sourceCharacterId: result.sourceCharacterId,
+          sourceCharacterName: result.sourceCharacterName,
+        }))).map(async ({ fit, sourceCharacterId, sourceCharacterName }) => {
+          const hullTypeId = Number(fit.ship_type_id);
+          const hull =
+            names.get(String(hullTypeId)) || `Type ${hullTypeId}`;
+          const items = new Map();
+          (fit.items || []).forEach((item) => {
+            const typeId = Number(item.type_id);
+            const key = String(typeId);
+            const entry = items.get(key) || {
+              typeId,
+              name: names.get(key) || `Type ${typeId}`,
+              quantity: 0,
+            };
+            entry.quantity += Number(item.quantity) || 0;
+            items.set(key, entry);
+          });
+          return {
+            fittingId: fit.fitting_id,
+            name: fit.name || 'Unnamed fitting',
+            description: textFromHtml(fit.description),
+            sourceCharacterId,
+            sourceCharacterName,
+            hull,
+            hullTypeId,
+            items: [...items.values()],
+            ...(await classifyHull(hullTypeId)),
+          };
+        }),
+      );
+      if (
+        renderId !== inGameFitsRenderId ||
+        targetCharacterId !== String(activeCharacterId)
+      ) return;
+      status.remove();
+      const unavailable = results.filter(
+        (result) => result.needsAuthorization || result.error,
+      );
+      if (unavailable.length) {
+        const warning = document.createElement('p');
+        warning.className = 'assignment-warning';
+        warning.textContent =
+          `Could not load fittings for: ${unavailable
+            .map((result) => result.sourceCharacterName)
+            .join(', ')}. Reconnect those characters to grant fitting access.`;
+        const reconnect = document.createElement('button');
+        reconnect.type = 'button';
+        reconnect.textContent = 'Authorize fitting access';
+        reconnect.addEventListener('click', beginLogin);
+        contents.append(warning, reconnect);
+      }
+      const existingKeys = new Set(
+        activeCharacterPlans().map(
+          (plan) =>
+            `${plan.hull.toLocaleLowerCase()}|${plan.name.toLocaleLowerCase()}`,
+        ),
+      );
+      const available = normalized.filter(
+        (fit) =>
+          !existingKeys.has(
+            `${fit.hull.toLocaleLowerCase()}|${fit.name.toLocaleLowerCase()}`,
+          ),
+      );
+      if (!available.length) {
+        const empty = document.createElement('p');
+        empty.textContent = normalized.length
+          ? 'All available in-game fittings are already in this character\'s fleet plan.'
+          : 'The connected characters have no available saved in-game fittings.';
+        contents.append(empty);
+        return;
+      }
+      available
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(b.name) ||
+            a.sourceCharacterName.localeCompare(b.sourceCharacterName),
+        )
+        .forEach((fit) => {
+          const card = document.createElement('article');
+          card.className = 'saved-fit';
+          const head = document.createElement('div');
+          head.className = 'saved-fit-head';
+          const identity = document.createElement('div');
+          identity.className = 'fit-identity';
+          const text = document.createElement('div');
+          const title = document.createElement('h4');
+          title.textContent = `${fit.name} · ${fit.hull}`;
+          const detail = document.createElement('p');
+          detail.textContent = `${fit.description || 'Saved in EVE Online'} · Saved by ${fit.sourceCharacterName}`;
+          const use = document.createElement('button');
+          use.type = 'button';
+          use.textContent = 'Use as template';
+          use.addEventListener('click', () => {
+            const characterId = String(activeCharacterId || '');
+            if (!characterId || !characterSessions[characterId]) return;
+            const station = assetGroups[0];
+            const targets = station
+              ? [{
+                  stationId: station.id,
+                  stationName: station.name,
+                  copies: 0,
+                  shipIds: [],
+                }]
+              : [];
+            savedFitPlans.push({
+              id: crypto.randomUUID
+                ? crypto.randomUUID()
+                : randomString(18),
+              characterId,
+              characterName:
+                characterSessions[characterId]?.name ||
+                `Character ${characterId}`,
+              name: fit.name,
+              hull: fit.hull,
+              hullTypeId: fit.hullTypeId,
+              items: fit.items,
+              targets,
+              stationId: station?.id || '',
+              stationName: station?.name || '',
+              copies: 0,
+              shipIds: [],
+              isBattleship: fit.isBattleship,
+              isFrigate: fit.isFrigate,
+              groupName: fit.groupName,
+              escapeFitPlanId: '',
+            });
+            persistFitPlans();
+            renderSavedFitPlans();
+            updateFitPlannerControls();
+          });
+          text.append(title, detail);
+          identity.append(createFitShipIcon(fit.hullTypeId, fit.hull), text);
+          head.append(identity, use);
+          card.append(head);
+          contents.append(card);
+        });
+    } catch (error) {
+      if (
+        renderId !== inGameFitsRenderId ||
+        targetCharacterId !== String(activeCharacterId)
+      ) return;
+      status.textContent = error.message || String(error);
+      status.classList.add('assignment-warning');
+    }
   }
 
   async function calculateSavedPlanDiff(plan) {
@@ -2096,6 +2380,7 @@
       persistCharacterSessions();
       migrateUnscopedPlans();
       renderCharacterSelector();
+      inGameFittingsPromiseByCharacter.delete(String(id));
       const assets = await fetchAllAssets(id, token);
       const typeNames = await resolveNames(
         assets.map((asset) => asset.type_id),
@@ -2160,6 +2445,7 @@
     if (activeCharacterId) {
       delete characterSessions[activeCharacterId];
       assetGroupsByCharacterCache.delete(String(activeCharacterId));
+      inGameFittingsPromiseByCharacter.delete(String(activeCharacterId));
     }
     activeCharacterId = Object.keys(characterSessions)[0] || '';
     persistCharacterSessions();

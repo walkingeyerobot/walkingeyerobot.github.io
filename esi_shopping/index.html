@@ -19,7 +19,7 @@
         <p class="hint">Authorize this application through EVE Online's official login.</p>
         <button id="login" type="button">Log in with EVE Online</button>
         <div class="error" id="error" role="alert"></div>
-        <p class="fineprint">This application requests <code>esi-assets.read_assets.v1</code> and <code>esi-universe.read_structures.v1</code>.</p>
+        <p class="fineprint">This application requests <code>esi-assets.read_assets.v1</code>, <code>esi-universe.read_structures.v1</code>, and <code>esi-fittings.read_fittings.v1</code>.</p>
       </section>
 
       <section class="card dashboard" id="dashboard">
@@ -87,6 +87,7 @@
           <div class="fit-heading"><div><div class="balance-label">Saved fits</div><h3>Fleet plan</h3></div></div>
           <div class="saved-fits" id="savedFits"></div>
           <div class="shared-fits" id="sharedFits"></div>
+          <div class="shared-fits" id="inGameFits"></div>
         </section>
 
         <section class="tab-panel" id="fleetShoppingTabPanel" role="tabpanel" aria-labelledby="fleetShoppingTab" hidden>
