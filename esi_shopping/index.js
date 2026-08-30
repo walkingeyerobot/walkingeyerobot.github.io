@@ -1924,7 +1924,7 @@
     }
   }
 
-  async function calculateSavedPlanDiff(plan) {
+  async function calculateSavedPlanDiff(plan, individualShip = null) {
     const canonicalById = await duplicateTypeGroups();
     const keyFor = (typeId, name) => {
       if (typeId != null) {
@@ -1945,11 +1945,15 @@
         effectiveCopies: Math.max(target.copies, assignedShips.length),
       };
     });
-    const assignedShips = targetStates.flatMap((state) => state.assignedShips);
-    const effectiveCopies = targetStates.reduce(
-      (total, state) => total + state.effectiveCopies,
-      0,
-    );
+    const assignedShips = individualShip
+      ? [individualShip]
+      : targetStates.flatMap((state) => state.assignedShips);
+    const effectiveCopies = individualShip
+      ? 1
+      : targetStates.reduce(
+          (total, state) => total + state.effectiveCopies,
+          0,
+        );
     const add = (map, typeId, name, quantity, location = '') => {
       const key = keyFor(typeId, name);
       const entry = map.get(key) || { name, quantity: 0, locations: new Set() };
@@ -2007,6 +2011,45 @@
       );
   }
 
+  function createSavedPlanDiffTable(rows) {
+    const table = document.createElement('table');
+    const heading = document.createElement('tr');
+    ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach(
+      (value) => {
+        const th = document.createElement('th');
+        th.textContent = value;
+        heading.append(th);
+      },
+    );
+    const thead = document.createElement('thead');
+    thead.append(heading);
+    table.append(thead);
+    const tbody = document.createElement('tbody');
+    rows.forEach((item) => {
+      const tr = document.createElement('tr');
+      tr.className =
+        item.difference < 0
+          ? 'missing'
+          : item.required === 0
+            ? 'extra'
+            : 'match';
+      [
+        item.name,
+        item.locations,
+        item.required,
+        item.present,
+        item.difference > 0 ? `+${item.difference}` : item.difference,
+      ].forEach((value) => {
+        const td = document.createElement('td');
+        td.textContent = value;
+        tr.append(td);
+      });
+      tbody.append(tr);
+    });
+    table.append(tbody);
+    return table;
+  }
+
   async function showSavedPlanDiff(plan, card, button) {
     const existing = card.querySelector('.saved-fit-diff');
     if (existing) {
@@ -2017,60 +2060,45 @@
     button.textContent = 'Hide diff';
     const output = document.createElement('div');
     output.className = 'saved-fit-diff';
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.textContent = 'Close diff';
-    close.addEventListener('click', () => {
-      output.remove();
-      button.textContent = 'Show diff';
-    });
     const content = document.createElement('div');
     content.textContent = 'Calculating…';
-    output.append(close, content);
+    output.append(content);
     card.append(output);
     try {
-      const rows = await calculateSavedPlanDiff(plan);
-      if (!rows.length) {
-        content.textContent =
-          'No differences — assigned ships satisfy this plan.';
+      const assignedShips = targetsForPlan(plan)
+        .flatMap((target) => target.shipIds || [])
+        .map((shipId) => findAssetNode(shipId))
+        .filter(Boolean);
+      if (assignedShips.length > 1) {
+        const sections = await Promise.all(
+          assignedShips.map(async (ship) => {
+            const section = document.createElement('details');
+            section.className = 'individual-ship-diff';
+            section.open = true;
+            const heading = document.createElement('summary');
+            const station = findAssetGroupForItem(ship.item_id);
+            heading.textContent = station
+              ? `${ship.name} · ${station.name}`
+              : ship.name;
+            const rows = await calculateSavedPlanDiff(plan, ship);
+            section.append(heading);
+            if (rows.length) section.append(createSavedPlanDiffTable(rows));
+            else {
+              const match = document.createElement('p');
+              match.textContent = 'No differences — this ship satisfies the fit.';
+              section.append(match);
+            }
+            return section;
+          }),
+        );
+        content.replaceChildren(...sections);
         return;
       }
-      const table = document.createElement('table');
-      const heading = document.createElement('tr');
-      ['Item', 'Actual Location', 'Required', 'Assigned', 'Difference'].forEach(
-        (value) => {
-          const th = document.createElement('th');
-          th.textContent = value;
-          heading.append(th);
-        },
-      );
-      const thead = document.createElement('thead');
-      thead.append(heading);
-      table.append(thead);
-      const tbody = document.createElement('tbody');
-      rows.forEach((item) => {
-        const tr = document.createElement('tr');
-        tr.className =
-          item.difference < 0
-            ? 'missing'
-            : item.required === 0
-              ? 'extra'
-              : 'match';
-        [
-          item.name,
-          item.locations,
-          item.required,
-          item.present,
-          item.difference > 0 ? `+${item.difference}` : item.difference,
-        ].forEach((value) => {
-          const td = document.createElement('td');
-          td.textContent = value;
-          tr.append(td);
-        });
-        tbody.append(tr);
-      });
-      table.append(tbody);
-      content.replaceChildren(table);
+      const rows = await calculateSavedPlanDiff(plan);
+      if (rows.length) content.replaceChildren(createSavedPlanDiffTable(rows));
+      else
+        content.textContent =
+          'No differences — assigned ships satisfy this plan.';
     } catch (error) {
       content.textContent = error.message || String(error);
     }

@@ -132,6 +132,10 @@
     .saved-fit-actions button { color:#cdd8dc; border-color:#324249 }
     .saved-fit-actions .remove-plan { color:#ff9aa0; border-color:#53343a }
     .saved-fit-diff { margin-top:10px; overflow:auto }
+    .individual-ship-diff + .individual-ship-diff { margin-top:18px; padding-top:16px; border-top:1px solid var(--line) }
+    .individual-ship-diff > summary { margin:0 0 8px; color:#dce7ea; cursor:pointer; font-size:12px; font-weight:700 }
+    .individual-ship-diff:not([open]) > summary { margin-bottom:0 }
+    .individual-ship-diff p { margin:0 }
     .saved-fit-diff table { width:100%; border-collapse:collapse; font-size:11px }
     .saved-fit-diff th,.saved-fit-diff td { padding:7px; border-bottom:1px solid rgba(255,255,255,.055); text-align:right }
     .saved-fit-diff th:first-child,.saved-fit-diff td:first-child { text-align:left }
