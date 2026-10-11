@@ -611,6 +611,85 @@
     localStorage.setItem(SAVED_FITS_KEY, JSON.stringify(savedFitPlans));
   }
 
+  function fitDefinitionIdForPlan(plan) {
+    return String(plan.fitDefinitionId || plan.id);
+  }
+
+  function fitDefinitionFields(fit) {
+    return {
+      name: fit.name,
+      hull: fit.hull,
+      hullTypeId: fit.hullTypeId,
+      items: fit.items.map((item) => ({ ...item })),
+      isBattleship: fit.isBattleship,
+      isFrigate: fit.isFrigate,
+      groupName: fit.groupName,
+    };
+  }
+
+  function uniqueFrigatePlans(preferredPlanId = '') {
+    const byDefinition = new Map();
+    savedFitPlans
+      .filter((plan) => plan.isFrigate)
+      .forEach((plan) => {
+        const definitionId = fitDefinitionIdForPlan(plan);
+        const current = byDefinition.get(definitionId);
+        const priority =
+          plan.id === preferredPlanId
+            ? 2
+            : String(plan.characterId) === String(activeCharacterId)
+              ? 1
+              : 0;
+        if (!current || priority > current.priority)
+          byDefinition.set(definitionId, { plan, priority });
+      });
+    return [...byDefinition.values()]
+      .map(({ plan }) => plan)
+      .sort(
+        (a, b) =>
+          a.name.localeCompare(b.name) || a.hull.localeCompare(b.hull),
+      );
+  }
+
+  function migrateSharedFitDefinitions() {
+    const bySignature = new Map();
+    savedFitPlans.forEach((plan) => {
+      const items = (plan.items || [])
+        .map((item) => [
+          item.typeId == null ? null : String(item.typeId),
+          String(item.name || '').toLocaleLowerCase(),
+          Number(item.quantity) || 0,
+        ])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+      const signature = JSON.stringify([
+        String(plan.hull || '').toLocaleLowerCase(),
+        String(plan.name || '').toLocaleLowerCase(),
+        items,
+      ]);
+      if (!bySignature.has(signature)) bySignature.set(signature, []);
+      bySignature.get(signature).push(plan);
+    });
+    let changed = false;
+    bySignature.forEach((plans) => {
+      if (new Set(plans.map((plan) => String(plan.characterId))).size < 2)
+        return;
+      const existingIds = new Set(
+        plans
+          .map((plan) => plan.fitDefinitionId)
+          .filter(Boolean)
+          .map(String),
+      );
+      if (existingIds.size > 1) return;
+      const definitionId = [...existingIds][0] || String(plans[0].id);
+      plans.forEach((plan) => {
+        if (String(plan.fitDefinitionId || '') === definitionId) return;
+        plan.fitDefinitionId = definitionId;
+        changed = true;
+      });
+    });
+    if (changed) persistFitPlans();
+  }
+
   async function hydrateSavedPlanClasses() {
     const pending = savedFitPlans.filter(
       (plan) =>
@@ -1094,8 +1173,7 @@
     const field = $('compareEscapeField');
     const select = $('compareEscapeFit');
     select.replaceChildren(new Option('Choose a saved frigate fit', ''));
-    savedFitPlans
-      .filter((plan) => plan.isFrigate)
+    uniqueFrigatePlans(currentFit?.escapeFitPlanId)
       .forEach((plan) =>
         select.append(new Option(`${plan.name} · ${plan.hull}`, plan.id)),
       );
@@ -1276,8 +1354,7 @@
     const escapeSelect = $('escapeFit');
     const previousEscapeFit = currentFit?.escapeFitPlanId || escapeSelect.value;
     escapeSelect.replaceChildren(new Option('Choose a saved frigate fit', ''));
-    savedFitPlans
-      .filter((plan) => plan.isFrigate)
+    uniqueFrigatePlans(previousEscapeFit)
       .forEach((plan) =>
         escapeSelect.append(new Option(`${plan.name} · ${plan.hull}`, plan.id)),
       );
@@ -1426,8 +1503,7 @@
         label.textContent = 'Escape bay frigate fit';
         const select = document.createElement('select');
         select.append(new Option('Choose a saved frigate fit', ''));
-        savedFitPlans
-          .filter((candidate) => candidate.isFrigate)
+        uniqueFrigatePlans(plan.escapeFitPlanId)
           .forEach((candidate) =>
             select.append(
               new Option(`${candidate.name} · ${candidate.hull}`, candidate.id),
@@ -1452,6 +1528,7 @@
     $('fleetShoppingPanel').hidden = !hasFleetPlans;
     $('fleetShoppingEmpty').hidden = hasFleetPlans;
     $('fleetShoppingList').hidden = true;
+    $('copyFleetShopping').hidden = true;
     $('closeFleetShopping').hidden = true;
     $('fleetShoppingMessage').textContent = '';
     renderFleetShoppingCharacters();
@@ -1637,15 +1714,26 @@
   function renderSharedFits() {
     const root = $('sharedFits');
     root.replaceChildren();
+    const activeDefinitionIds = new Set(
+      activeCharacterPlans().map(fitDefinitionIdForPlan),
+    );
     const existingKeys = new Set(
       activeCharacterPlans().map(
         (plan) => `${plan.hull.toLocaleLowerCase()}|${plan.name.toLocaleLowerCase()}`,
       ),
     );
+    const seenDefinitionIds = new Set();
     const shared = savedFitPlans.filter((plan) => {
+      const definitionId = fitDefinitionIdForPlan(plan);
       const key = `${plan.hull.toLocaleLowerCase()}|${plan.name.toLocaleLowerCase()}`;
-      if (String(plan.characterId) === String(activeCharacterId) || existingKeys.has(key))
+      if (
+        String(plan.characterId) === String(activeCharacterId) ||
+        activeDefinitionIds.has(definitionId) ||
+        seenDefinitionIds.has(definitionId) ||
+        existingKeys.has(key)
+      )
         return false;
+      seenDefinitionIds.add(definitionId);
       existingKeys.add(key);
       return true;
     });
@@ -1669,12 +1757,15 @@
       title.textContent = `${plan.name} · ${plan.hull}`;
       const use = document.createElement('button');
       use.type = 'button';
-      use.textContent = 'Use for this character';
+      use.textContent = 'Add to this character';
       use.addEventListener('click', () => {
         const station = assetGroups[0];
-        const clone = {
+        const definitionId = fitDefinitionIdForPlan(plan);
+        plan.fitDefinitionId = definitionId;
+        const characterPlan = {
           ...plan,
           id: crypto.randomUUID ? crypto.randomUUID() : randomString(18),
+          fitDefinitionId: definitionId,
           characterId: activeCharacterId,
           characterName:
             characterSessions[activeCharacterId]?.name || `Character ${activeCharacterId}`,
@@ -1686,7 +1777,7 @@
           copies: 0,
           shipIds: [],
         };
-        savedFitPlans.push(clone);
+        savedFitPlans.push(characterPlan);
         persistFitPlans();
         renderSavedFitPlans();
       });
@@ -1873,6 +1964,9 @@
           use.addEventListener('click', () => {
             const characterId = String(activeCharacterId || '');
             if (!characterId || !characterSessions[characterId]) return;
+            const planId = crypto.randomUUID
+              ? crypto.randomUUID()
+              : randomString(18);
             const station = assetGroups[0];
             const targets = station
               ? [{
@@ -1883,9 +1977,8 @@
                 }]
               : [];
             savedFitPlans.push({
-              id: crypto.randomUUID
-                ? crypto.randomUUID()
-                : randomString(18),
+              id: planId,
+              fitDefinitionId: planId,
               characterId,
               characterName:
                 characterSessions[characterId]?.name ||
@@ -2199,13 +2292,16 @@
         throw new Error(
           'Choose a saved frigate fit for the battleship escape bay.',
         );
-      const savedPlan = {
-        id:
-          editingPlanId ||
-          (crypto.randomUUID ? crypto.randomUUID() : randomString(18)),
-        characterId: activeCharacterId,
-        characterName:
-          characterSessions[activeCharacterId]?.name || `Character ${activeCharacterId}`,
+      const existingPlan = editingPlanId
+        ? savedFitPlans.find((plan) => plan.id === editingPlanId)
+        : null;
+      const planId =
+        editingPlanId ||
+        (crypto.randomUUID ? crypto.randomUUID() : randomString(18));
+      const fitDefinitionId = existingPlan
+        ? fitDefinitionIdForPlan(existingPlan)
+        : planId;
+      const definition = fitDefinitionFields({
         name: currentFit.name,
         hull: currentFit.hull,
         hullTypeId: currentFit.hullTypeId,
@@ -2214,22 +2310,35 @@
           quantity: item.quantity,
           typeId: item.typeId,
         })),
+        isBattleship: currentFit.isBattleship,
+        isFrigate: currentFit.isFrigate,
+        groupName: currentFit.groupName,
+      });
+      const savedPlan = {
+        id: planId,
+        fitDefinitionId,
+        characterId: activeCharacterId,
+        characterName:
+          characterSessions[activeCharacterId]?.name || `Character ${activeCharacterId}`,
+        ...definition,
         targets,
         stationId: targets[0].stationId,
         stationName: targets[0].stationName,
         copies: targets[0].copies,
         shipIds: targets[0].shipIds,
-        isBattleship: currentFit.isBattleship,
-        isFrigate: currentFit.isFrigate,
-        groupName: currentFit.groupName,
         escapeFitPlanId,
       };
       if (editingPlanId) {
-        const index = savedFitPlans.findIndex(
-          (plan) => plan.id === editingPlanId,
-        );
-        if (index >= 0) savedFitPlans[index] = savedPlan;
-        else savedFitPlans.push(savedPlan);
+        savedFitPlans = savedFitPlans.map((plan) => {
+          if (plan.id === editingPlanId) return savedPlan;
+          if (fitDefinitionIdForPlan(plan) !== fitDefinitionId) return plan;
+          return {
+            ...plan,
+            ...fitDefinitionFields(definition),
+            fitDefinitionId,
+          };
+        });
+        if (!existingPlan) savedFitPlans.push(savedPlan);
       } else savedFitPlans.push(savedPlan);
       persistFitPlans();
       renderSavedFitPlans();
@@ -2374,6 +2483,7 @@
       $('fleetShoppingList').value =
         sections.join('\n\n') || 'No items needed.';
       $('fleetShoppingList').hidden = false;
+      $('copyFleetShopping').hidden = false;
       $('closeFleetShopping').hidden = false;
       $('fleetShoppingMessage').textContent = '';
       $('fleetShoppingList').focus();
@@ -2388,8 +2498,40 @@
 
   function closeFleetShoppingList() {
     $('fleetShoppingList').hidden = true;
+    $('copyFleetShopping').hidden = true;
     $('closeFleetShopping').hidden = true;
     $('fleetShoppingMessage').textContent = '';
+  }
+
+  async function copyFleetShoppingList() {
+    const list = $('fleetShoppingList');
+    const text = list.value;
+    $('fleetShoppingMessage').classList.remove('bad');
+    try {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        } catch (_) {
+          /* Fall back to the selection-based clipboard API below. */
+        }
+      }
+      if (!copied) {
+        const selectionStart = list.selectionStart;
+        const selectionEnd = list.selectionEnd;
+        list.focus();
+        list.select();
+        copied = document.execCommand('copy');
+        list.setSelectionRange(selectionStart, selectionEnd);
+      }
+      if (!copied) throw new Error('The browser denied clipboard access.');
+      $('fleetShoppingMessage').textContent = 'Shopping list copied to clipboard.';
+    } catch (error) {
+      $('fleetShoppingMessage').classList.add('bad');
+      $('fleetShoppingMessage').textContent =
+        error.message || 'Could not copy the shopping list.';
+    }
   }
 
   async function loadAssets() {
@@ -2540,6 +2682,7 @@
     'click',
     generateFleetShoppingList,
   );
+  $('copyFleetShopping').addEventListener('click', copyFleetShoppingList);
   $('closeFleetShopping').addEventListener('click', closeFleetShoppingList);
   $('toggleTree').addEventListener('click', () => {
     treeExpanded = !treeExpanded;
@@ -2549,6 +2692,7 @@
 
   (async () => {
     activateTab('fleetPlanPanel');
+    migrateSharedFitDefinitions();
     try {
       await hydrateSavedPlanClasses();
     } catch (_) {
