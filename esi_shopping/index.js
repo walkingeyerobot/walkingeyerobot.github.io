@@ -880,17 +880,19 @@
     };
   }
 
-  function ownedShipsForFit(fit) {
+  function ownedShipsForFit(fit, groups = assetGroups) {
     const ships = [];
     const visit = (node, locationName) => {
       if (
         node.is_singleton &&
-        node.typeName.toLocaleLowerCase() === fit.hull.toLocaleLowerCase()
+        (fit.hullTypeId
+          ? String(node.type_id) === String(fit.hullTypeId)
+          : node.typeName.toLocaleLowerCase() === fit.hull.toLocaleLowerCase())
       )
         ships.push({ node, locationName });
       node.children.forEach((child) => visit(child, locationName));
     };
-    assetGroups.forEach((group) =>
+    groups.forEach((group) =>
       group.children.forEach((node) => visit(node, group.name)),
     );
     return ships;
@@ -1194,7 +1196,79 @@
       stationName: plan.stationName,
       copies: plan.copies ?? 0,
       shipIds: plan.shipIds || [],
+      shipNames: plan.shipNames || [],
     }];
+  }
+
+  function assignedShipsForTarget(plan, target, groups = assetGroups, checkConflicts = false) {
+    const ships = new Map();
+    const names = new Set(target.shipNames || []);
+    for (const id of target.shipIds || []) {
+      const ship = findAssetNodeInGroups(groups, id);
+      if (!ship) continue;
+      // A renamed ship follows its matching name assignment.
+      if (!checkConflicts && ship.customName && !names.has(ship.customName) &&
+        savedFitPlans.some((otherPlan) =>
+          String(otherPlan.characterId) === String(plan.characterId) &&
+          (otherPlan.hullTypeId
+            ? String(otherPlan.hullTypeId) === String(ship.type_id)
+            : otherPlan.hull.toLocaleLowerCase() === ship.typeName.toLocaleLowerCase()) &&
+          targetsForPlan(otherPlan).some((otherTarget) =>
+            otherTarget.shipNames?.includes(ship.customName),
+          ),
+        )
+      ) continue;
+      ships.set(String(ship.item_id), ship);
+    }
+    if (names.size) {
+      for (const { node } of ownedShipsForFit(plan, groups)) {
+        if (names.has(node.customName)) ships.set(String(node.item_id), node);
+      }
+    }
+    return [...ships.values()];
+  }
+
+  function populateAssignmentOptions(select, target = {}) {
+    select.replaceChildren();
+    const ids = new Set((target.shipIds || []).map(String));
+    const names = new Set(target.shipNames || []);
+    const byId = document.createElement('optgroup');
+    byId.label = 'Individual ships';
+    const byName = document.createElement('optgroup');
+    byName.label = 'All ships with this name';
+    const counts = new Map();
+    for (const { node, locationName } of ownedShipsForFit(currentFit)) {
+      const id = String(node.item_id);
+      byId.append(new Option(`${node.name} — ${locationName} (#${id})`, id, false, ids.delete(id)));
+      if (node.customName && node.customName !== 'None')
+        counts.set(node.customName, (counts.get(node.customName) || 0) + 1);
+    }
+    for (const id of ids)
+      byId.append(new Option(`Ship #${id} (unavailable)`, id, false, true));
+    for (const name of new Set([...counts.keys(), ...names])) {
+      const count = counts.get(name) || 0;
+      byName.append(new Option(`${name} (${count} owned)`, `name:${name}`, false, names.has(name)));
+    }
+    if (byId.children.length) select.append(byId);
+    if (byName.children.length) select.append(byName);
+    if (!select.options.length)
+      select.append(new Option(`No owned ${currentFit.hull} ships`, ''));
+  }
+
+  function selectedAssignments(select) {
+    const values = [...select.selectedOptions].map((option) => option.value).filter(Boolean);
+    return {
+      shipIds: values.filter((value) => !value.startsWith('name:')),
+      shipNames: values.filter((value) => value.startsWith('name:')).map((value) => value.slice(5)),
+    };
+  }
+
+  function assignmentKeys(plan, target) {
+    return new Set([
+      ...(target.shipIds || []).map(String),
+      ...(target.shipNames || []).map((name) => `name:${plan.hull.toLocaleLowerCase()}:${name}`),
+      ...assignedShipsForTarget(plan, target, assetGroups, true).map((ship) => String(ship.item_id)),
+    ]);
   }
 
   function addStationTargetEditor(target = {}) {
@@ -1247,15 +1321,7 @@
     ships.className = 'target-ships';
     ships.multiple = true;
     ships.size = 8;
-    if (currentFit) {
-      ownedShipsForFit(currentFit).forEach(({ node, locationName }) =>
-        ships.append(new Option(`${node.name} — ${locationName} (#${node.item_id})`, String(node.item_id))),
-      );
-    }
-    const selectedIds = (target.shipIds || []).map(String);
-    [...ships.options].forEach((option) => {
-      option.selected = selectedIds.includes(option.value);
-    });
+    if (currentFit) populateAssignmentOptions(ships, target);
     ships.addEventListener('change', validateStationTargetAssignments);
     row.append(head, fields, shipsLabel, ships);
     $('extraStationTargets').append(row);
@@ -1269,7 +1335,7 @@
       stationId: $('fitStation').value,
       stationName: primaryStation?.name || $('fitStation').selectedOptions[0]?.text || '',
       copies: Number($('fitCopies').value),
-      shipIds: [...$('fitShips').selectedOptions].map((option) => option.value).filter(Boolean),
+      ...selectedAssignments($('fitShips')),
     }];
     document.querySelectorAll('.station-target').forEach((row) => {
       const station = row.querySelector('.target-station');
@@ -1277,26 +1343,25 @@
         stationId: station.value,
         stationName: station.selectedOptions[0]?.text || '',
         copies: Number(row.querySelector('.target-copies').value),
-        shipIds: [...row.querySelector('.target-ships').selectedOptions]
-          .map((option) => option.value)
-          .filter(Boolean),
+        ...selectedAssignments(row.querySelector('.target-ships')),
       });
     });
     return targets;
   }
 
   function validateStationTargetAssignments() {
-    const shipIds = collectStationTargets().flatMap((target) => target.shipIds);
+    const keys = currentFit
+      ? collectStationTargets().flatMap((target) => [...assignmentKeys(currentFit, target)])
+      : [];
     const seen = new Set();
-    const duplicateId = shipIds.find((id) => {
+    const duplicateId = keys.find((id) => {
       if (seen.has(id)) return true;
       seen.add(id);
       return false;
     });
     if (duplicateId) {
-      const ship = findAssetNode(duplicateId);
       $('planMessage').classList.add('bad');
-      $('planMessage').textContent = `${ship?.name || `Ship #${duplicateId}`} cannot be assigned to multiple stations.`;
+      $('planMessage').textContent = 'A ship or ship name cannot be assigned to multiple stations.';
       $('saveFit').disabled = true;
       return false;
     }
@@ -1329,22 +1394,8 @@
     const shipSelect = $('fitShips');
     shipSelect.replaceChildren();
     if (currentFit) {
-      ownedShipsForFit(currentFit).forEach(({ node, locationName }) => {
-        shipSelect.append(
-          new Option(
-            `${node.name} — ${locationName} (#${node.item_id})`,
-            String(node.item_id),
-          ),
-        );
-      });
-      if (!shipSelect.options.length)
-        shipSelect.append(new Option(`No owned ${currentFit.hull} ships`, ''));
       const comparedShipId = $('shipSelect').value;
-      if (comparedShipId) {
-        [...shipSelect.options].forEach((option) => {
-          option.selected = option.value === comparedShipId;
-        });
-      }
+      populateAssignmentOptions(shipSelect, { shipIds: comparedShipId ? [comparedShipId] : [] });
       shipSelect.disabled = false;
     } else {
       shipSelect.append(new Option('Load an EFT fit first', ''));
@@ -1378,6 +1429,7 @@
     });
     const group = findAssetGroupForItem(comparedShipId);
     if (group) $('fitStation').value = group.id;
+    validateStationTargetAssignments();
   }
 
   function createFitShipIcon(typeId, hull) {
@@ -1431,13 +1483,15 @@
       title.textContent = `${plan.name} · ${plan.hull}`;
       const detail = document.createElement('p');
       const targets = targetsForPlan(plan);
-      const assigned = targets.reduce((total, target) => total + (target.shipIds?.length || 0), 0);
+      const assignments = targets.map((target) => assignedShipsForTarget(plan, target));
+      const assigned = assignments.reduce((total, ships) => total + ships.length, 0);
       const copies = targets.reduce((total, target) => total + target.copies, 0);
       detail.textContent = `${copies} total cop${copies === 1 ? 'y' : 'ies'} across ${targets.length} station${targets.length === 1 ? '' : 's'} · ${assigned} ship${assigned === 1 ? '' : 's'} assigned`;
       text.append(title, detail);
-      targets.forEach((target) => {
+      targets.forEach((target, index) => {
         const targetDetail = document.createElement('p');
-        targetDetail.textContent = `${target.stationName}: ${target.copies} cop${target.copies === 1 ? 'y' : 'ies'}, ${target.shipIds?.length || 0} assigned`;
+        const nameDetail = target.shipNames?.length ? ` · By name: ${target.shipNames.join(', ')}` : '';
+        targetDetail.textContent = `${target.stationName}: ${target.copies} cop${target.copies === 1 ? 'y' : 'ies'}, ${assignments[index].length} assigned${nameDetail}`;
         text.append(targetDetail);
       });
       const exemptEscapeFrigate =
@@ -1449,11 +1503,9 @@
         warning.textContent = '⚠ No ships are assigned to this fit.';
         text.append(warning);
       }
-      const misplacedShips = targets.flatMap((target) =>
-        (target.shipIds || []).flatMap((shipId) => {
-          const ship = findAssetNode(shipId);
-          if (!ship) return [];
-          const group = findAssetGroupForItem(shipId);
+      const misplacedShips = targets.flatMap((target, index) =>
+        assignments[index].flatMap((ship) => {
+          const group = findAssetGroupForItem(ship.item_id);
           if (!group || String(group.id) === String(target.stationId)) return [];
           return [{ ship, group }];
         }),
@@ -2029,9 +2081,7 @@
     const required = new Map();
     const present = new Map();
     const targetStates = targetsForPlan(plan).map((target) => {
-      const assignedShips = (target.shipIds || [])
-        .map((shipId) => findAssetNode(shipId))
-        .filter(Boolean);
+      const assignedShips = assignedShipsForTarget(plan, target);
       return {
         target,
         assignedShips,
@@ -2159,9 +2209,7 @@
     card.append(output);
     try {
       const assignedShips = targetsForPlan(plan)
-        .flatMap((target) => target.shipIds || [])
-        .map((shipId) => findAssetNode(shipId))
-        .filter(Boolean);
+        .flatMap((target) => assignedShipsForTarget(plan, target));
       if (assignedShips.length > 1) {
         const sections = await Promise.all(
           assignedShips.map(async (ship) => {
@@ -2223,9 +2271,7 @@
       $('fitStation').append(new Option(primary.stationName, primary.stationId));
     $('fitStation').value = primary.stationId;
     $('fitCopies').value = primary.copies;
-    [...$('fitShips').options].forEach((option) => {
-      option.selected = (primary.shipIds || []).map(String).includes(option.value);
-    });
+    populateAssignmentOptions($('fitShips'), primary);
     $('extraStationTargets').replaceChildren();
     targets.slice(1).forEach(addStationTargetEditor);
     $('escapeFit').value = plan.escapeFitPlanId || '';
@@ -2235,6 +2281,7 @@
       `Editing saved fit: ${plan.name} · ${plan.hull}`;
     $('editState').hidden = false;
     $('planMessage').textContent = `Editing ${plan.name}.`;
+    validateStationTargetAssignments();
     $('eftInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
@@ -2271,19 +2318,18 @@
         if (!Number.isSafeInteger(target.copies) || target.copies < 0)
           throw new Error('Desired copies must be zero or a positive whole number.');
       });
-      const shipIds = targets.flatMap((target) => target.shipIds);
-      if (new Set(shipIds).size !== shipIds.length)
-        throw new Error('A ship cannot be assigned to multiple stations.');
+      if (!validateStationTargetAssignments()) return;
+      const keys = new Set(targets.flatMap((target) => [...assignmentKeys(currentFit, target)]));
       const duplicateAssignment = activeCharacterPlans().find(
         (plan) =>
           plan.id !== editingPlanId &&
           targetsForPlan(plan).some((target) =>
-            target.shipIds?.some((id) => shipIds.includes(String(id))),
+            [...assignmentKeys(plan, target)].some((key) => keys.has(key)),
           ),
       );
       if (duplicateAssignment)
         throw new Error(
-          `A selected ship is already assigned to ${duplicateAssignment.name}.`,
+          `A selected ship or ship name is already assigned to ${duplicateAssignment.name}.`,
         );
       const escapeFitPlanId = currentFit.isBattleship
         ? $('escapeFit').value
@@ -2326,6 +2372,7 @@
         stationName: targets[0].stationName,
         copies: targets[0].copies,
         shipIds: targets[0].shipIds,
+        shipNames: targets[0].shipNames,
         escapeFitPlanId,
       };
       if (editingPlanId) {
@@ -2435,9 +2482,7 @@
               items: new Map(),
             });
           const inventory = stations.get(stationId).items;
-          const assignedShips = (target.shipIds || [])
-            .map((shipId) => findAssetNodeInGroups(characterAssets, shipId))
-            .filter(Boolean);
+          const assignedShips = assignedShipsForTarget(plan, target, characterAssets);
           const effectiveCopies = Math.max(target.copies, assignedShips.length);
           adjust(inventory, plan.hullTypeId, plan.hull, effectiveCopies);
           plan.items.forEach((item) =>
