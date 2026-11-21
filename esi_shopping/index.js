@@ -758,12 +758,12 @@
     return groups;
   }
 
-  function findAssetGroupForItem(itemId) {
+  function findAssetGroupForItem(itemId, groups = assetGroups) {
     if (!itemId) return null;
     let matchedGroup = null;
     const contains = (node) =>
       String(node.item_id) === String(itemId) || node.children.some(contains);
-    for (const group of assetGroups) {
+    for (const group of groups) {
       if (group.children.some(contains)) {
         matchedGroup = group;
         break;
@@ -882,18 +882,18 @@
 
   function ownedShipsForFit(fit, groups = assetGroups) {
     const ships = [];
-    const visit = (node, locationName) => {
+    const visit = (node, group) => {
       if (
         node.is_singleton &&
         (fit.hullTypeId
           ? String(node.type_id) === String(fit.hullTypeId)
           : node.typeName.toLocaleLowerCase() === fit.hull.toLocaleLowerCase())
       )
-        ships.push({ node, locationName });
-      node.children.forEach((child) => visit(child, locationName));
+        ships.push({ node, locationName: group.name, stationId: group.id });
+      node.children.forEach((child) => visit(child, group));
     };
     groups.forEach((group) =>
-      group.children.forEach((node) => visit(node, group.name)),
+      group.children.forEach((node) => visit(node, group)),
     );
     return ships;
   }
@@ -1200,6 +1200,14 @@
     }];
   }
 
+  function stationForShipName(plan, name, shipStationId) {
+    const targets = targetsForPlan(plan).filter((target) => target.shipNames?.includes(name));
+    if (targets.length === 1) return String(targets[0].stationId);
+    return targets.find((target) => String(target.stationId) === String(shipStationId))
+      ? String(shipStationId)
+      : undefined;
+  }
+
   function assignedShipsForTarget(plan, target, groups = assetGroups, checkConflicts = false) {
     const ships = new Map();
     const names = new Set(target.shipNames || []);
@@ -1207,22 +1215,23 @@
       const ship = findAssetNodeInGroups(groups, id);
       if (!ship) continue;
       // A renamed ship follows its matching name assignment.
-      if (!checkConflicts && ship.customName && !names.has(ship.customName) &&
+      if (!checkConflicts && ship.customName &&
         savedFitPlans.some((otherPlan) =>
           String(otherPlan.characterId) === String(plan.characterId) &&
           (otherPlan.hullTypeId
             ? String(otherPlan.hullTypeId) === String(ship.type_id)
             : otherPlan.hull.toLocaleLowerCase() === ship.typeName.toLocaleLowerCase()) &&
-          targetsForPlan(otherPlan).some((otherTarget) =>
-            otherTarget.shipNames?.includes(ship.customName),
-          ),
+          targetsForPlan(otherPlan).some((otherTarget) => otherTarget.shipNames?.includes(ship.customName)) &&
+          stationForShipName(otherPlan, ship.customName, findAssetGroupForItem(id, groups)?.id) !== undefined,
         )
       ) continue;
       ships.set(String(ship.item_id), ship);
     }
     if (names.size) {
-      for (const { node } of ownedShipsForFit(plan, groups)) {
-        if (names.has(node.customName)) ships.set(String(node.item_id), node);
+      for (const { node, stationId } of ownedShipsForFit(plan, groups)) {
+        if (names.has(node.customName) &&
+          stationForShipName(plan, node.customName, stationId) === String(target.stationId)
+        ) ships.set(String(node.item_id), node);
       }
     }
     return [...ships.values()];
@@ -1263,10 +1272,12 @@
     };
   }
 
-  function assignmentKeys(plan, target) {
+  function assignmentKeys(plan, target, scopeNamesToStation = false) {
     return new Set([
       ...(target.shipIds || []).map(String),
-      ...(target.shipNames || []).map((name) => `name:${plan.hull.toLocaleLowerCase()}:${name}`),
+      ...(target.shipNames || []).map((name) =>
+        `name:${JSON.stringify([plan.hull.toLocaleLowerCase(), name, scopeNamesToStation ? target.stationId : null])}`,
+      ),
       ...assignedShipsForTarget(plan, target, assetGroups, true).map((ship) => String(ship.item_id)),
     ]);
   }
@@ -1323,6 +1334,7 @@
     ships.size = 8;
     if (currentFit) populateAssignmentOptions(ships, target);
     ships.addEventListener('change', validateStationTargetAssignments);
+    station.addEventListener('change', validateStationTargetAssignments);
     row.append(head, fields, shipsLabel, ships);
     $('extraStationTargets').append(row);
   }
@@ -1350,8 +1362,10 @@
   }
 
   function validateStationTargetAssignments() {
+    const targets = collectStationTargets();
+    const draft = { ...currentFit, targets };
     const keys = currentFit
-      ? collectStationTargets().flatMap((target) => [...assignmentKeys(currentFit, target)])
+      ? targets.flatMap((target) => [...assignmentKeys(draft, target, true)])
       : [];
     const seen = new Set();
     const duplicateId = keys.find((id) => {
@@ -1361,7 +1375,9 @@
     });
     if (duplicateId) {
       $('planMessage').classList.add('bad');
-      $('planMessage').textContent = 'A ship or ship name cannot be assigned to multiple stations.';
+      $('planMessage').textContent = duplicateId.startsWith('name:')
+        ? 'A ship name can only be selected once per destination.'
+        : 'An individual ship cannot count toward multiple station targets.';
       $('saveFit').disabled = true;
       return false;
     }
@@ -1503,13 +1519,14 @@
         warning.textContent = '⚠ No ships are assigned to this fit.';
         text.append(warning);
       }
-      const misplacedShips = targets.flatMap((target, index) =>
-        assignments[index].flatMap((ship) => {
+      const misplacedShips = targets.flatMap((target, index) => {
+        if (Number(target.copies) === 0 && target.shipNames?.length) return [];
+        return assignments[index].flatMap((ship) => {
           const group = findAssetGroupForItem(ship.item_id);
           if (!group || String(group.id) === String(target.stationId)) return [];
           return [{ ship, group }];
-        }),
-      );
+        });
+      });
       if (misplacedShips.length) {
         card.classList.add('misplaced');
         const warning = document.createElement('p');
@@ -2319,7 +2336,8 @@
           throw new Error('Desired copies must be zero or a positive whole number.');
       });
       if (!validateStationTargetAssignments()) return;
-      const keys = new Set(targets.flatMap((target) => [...assignmentKeys(currentFit, target)]));
+      const draft = { ...currentFit, targets };
+      const keys = new Set(targets.flatMap((target) => [...assignmentKeys(draft, target)]));
       const duplicateAssignment = activeCharacterPlans().find(
         (plan) =>
           plan.id !== editingPlanId &&
@@ -2719,6 +2737,7 @@
   });
   $('saveFit').addEventListener('click', saveCurrentFitPlan);
   $('fitShips').addEventListener('change', validateStationTargetAssignments);
+  $('fitStation').addEventListener('change', validateStationTargetAssignments);
   $('addStationTarget').addEventListener('click', () =>
     addStationTargetEditor(),
   );
